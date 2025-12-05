@@ -1,0 +1,4037 @@
+version: "BastionLAN-1.0-core"
+source_codex: "ElUltimoBastionIAGOO.md"
+
+########################################
+# 0. CONFIGURACIÓN DEL MOTOR
+########################################
+
+engine:
+  state_var: "STATE.MODO_MOTOR"
+  modes:
+    FULL:
+      id: "ENGINE.FULL"
+      description: "Usa TODAS las reglas del Códice (Atlas 68, Marcas completas, Dietas, Sindicato, 24 Párrafos, etc.)."
+    LITE:
+      id: "ENGINE.LITE"
+      description: "Subconjunto seguro de reglas para modelos limitados o cuando se detecta confusión."
+  mode_switch:
+    to_lite_triggers:
+      - "El modelo se describe como rápido/básico."
+      - "El modelo inventa Casas, Marcas o reinos que no existen."
+      - "El modelo confunde Corte, Bastión o habla solo de 'marca 20, 25...' sin nombre."
+      - "El usuario pide 'modo lite' o 'simplifica reglas'."
+      - "Contexto muy largo y el usuario indica que se están olvidando reglas."
+    to_lite_effect:
+      - "STATE.MODO_MOTOR = ENGINE.LITE"
+      - "Usar solo reglas marcadas como seguras/LITE."
+    note_ia:
+      - "Es mejor entrar en LITE que improvisar fuera de canon."
+
+########################################
+# 1. NÚCLEO DE CAMPAÑA (NO AUDIO-LIBRO)
+########################################
+
+campaign:
+  focus:
+    mandatory: "EQUILIBRADO"
+    forbid_choice_menu: true
+    description: >
+      La IA no ofrece menú de enfoque (A Guerra, B Gestión, C Misterio).
+      Siempre asume campaña Equilibrada: mezcla combate, gestión, política y misterio.
+  loop:
+    id: "LOOP.CAMPANA_ESTANDAR"
+    steps:
+      - "Preparar expedición en el Bastión (rol + gestión)."
+      - "Viajar a la Frontera → tirar Peligros y Marcas."
+      - "Resolver escenas, batallas y progreso de Misiones (PM)."
+      - "Volver al Bastión y ejecutar Protocolo de Cierre (Hoja 11)."
+      - "Actualizar Fama/Infamia, Amistades y Relojes."
+  gameplay_not_audiobook:
+    id: "RULE.JUEGO_NO_AUDIOLIBRO"
+    constraints:
+      - "Cada turno de campaña debe incluir AL MENOS una tirada significativa (1d20+Rango) o avance/marca de reloj."
+      - "Decisiones narrativas importantes deben mapearse a: cambio en recursos (R, BL, PC, VP), PM de misión o Relojes."
+      - "Si el jugador escoge solo opciones narrativas, la IA introduce obstáculos con CD y dados."
+      - "No se permiten sesiones completas sin tiradas ni consecuencias mecánicas."
+
+########################################
+# 2. FUNDAMENTOS MECÁNICOS
+########################################
+
+core_rolls:
+  rule_id: "RULE.FUNDAMENTOS"
+  base_roll: "1d20 + RANGO + modificadores"
+  resources:
+    - "REALES (R) – Dinero corriente."
+    - "BL – Bóveda de Luz / crédito con la Corte."
+    - "PC – Puntos de Campaña."
+    - "VP – Valor Personal (usado en oficios, rescates, etc.)."
+
+########################################
+# 3. ENTIDADES PRINCIPALES
+########################################
+
+entities:
+  corte:
+    id: "CORTE.PRINCIPAL"
+    type: "PODER_CENTRAL"
+    tags: [POLITICA, RELIGION, FINANZAS]
+    resources: [REALES, BL]
+    roles:
+      - "Define Dietas de Gobierno y Presupuestos."
+      - "Concede Favores y Decretos a cambio de BL."
+      - "Puede intervenir contra el PJ si INFAMIA es alta."
+
+  bastion:
+    id: "BASTION.PRINCIPAL"
+    type: "FORTALEZA_FRONTERA"
+    tags: [MILITAR, LOGISTICA, NUCLEO_MANA]
+    commander: "Kaelen Barbagris"
+    control_rule:
+      id: "RULE.BASTION_CONTROL_KAELEN"
+      base_state: "Kaelen es siempre el Comandante del Bastión."
+      player_direct_control: false
+      rebellion:
+        allowed_phase: "CAMPANA.LATE"
+        requirements:
+          fama_min_rank: "FAMA.IV"
+          infamia_min: 60
+          lealtad_bastion_state_any_of: ["LEALTAD.NEUTRAL", "LEALTAD.PJ"]
+        confrontation:
+          type: "DESAFIO_HEROICO"
+          description: >
+            Enfrentarse a Kaelen o arrebatarle el mando requiere una cadena
+            de Misiones internas y un clímax con CD muy alta (heroica).
+          note: "No se puede 'ganar el Bastión' con una sola elección narrativa."
+    functions:
+      - "Cuartel general, reclutamiento y despliegue."
+      - "Centro de edificios (Hojas 9–10)."
+      - "Nodo rúnico principal de Transbordadores."
+
+  jugador:
+    id: "PJ.PRINCIPAL"
+    type: "OFICIAL"
+    tracks: ["TRACK.FAMA", "TRACK.INFAMIA"]
+    sheet_ref: "Hoja 7 – Ficha de Mando"
+    stats:
+      vigor_boxes: 10
+      cordura_boxes: 10
+
+########################################
+# 4. PISTAS DE ESTADO (TRACKS)
+########################################
+
+tracks:
+  fama:
+    rule_id: "RULE.FAMA"
+    range: [0, 100]
+    ranks:
+      - { id: "FAMA.I",   name: "Soldado",   range: [0, 25] }
+      - { id: "FAMA.II",  name: "Oficial",   range: [26, 50] }
+      - { id: "FAMA.III", name: "Veterano",  range: [51, 75] }
+      - { id: "FAMA.IV",  name: "Renombrado",range: [76, 94] }
+      - { id: "FAMA.V",   name: "Héroe",     range: [95, 100] }
+    gain_rule:
+      id: "RULE.FAMA_ACTUALIZACION"
+      base:
+        - "Cada acción IMPORTANTE resuelta con tirada 1d20+ y vista por testigos → +1 FAMA."
+        - "Éxitos y fracasos cuentan si el mundo se entera."
+        - "Acciones totalmente secretas pueden no dar FAMA."
+      closure:
+        - "En Hoja 11, contar tiradas importantes públicas y sumarlas a TRACK.FAMA."
+
+  infamia:
+    rule_id: "RULE.INFAMIA"
+    range: [0, 100]
+    thresholds:
+      - id: "INFAMIA.BAJA"
+        name: "Leal problemático"
+        range: [0, 40]
+      - id: "INFAMIA.MEDIA"
+        name: "Perseguido incómodo"
+        range: [41, 80]
+      - id: "INFAMIA.ALTA"
+        name: "Intervención"
+        range: [81, 99]
+    gain_cruelty:
+      id: "RULE.INFAMIA_ACTOS_CRUELES"
+      triggers:
+        - "Masacres innecesarias (aldeas, rendidos, prisioneros)."
+        - "Tortura sistemática."
+        - "Traición gratuita a aliados o refugiados."
+        - "Experimentar con Tinta/Plaga sobre personas sin consentimiento."
+      mechanic:
+        - "+1–3 por episodio cruel moderado."
+        - "+5 o más por atrocidades masivas."
+    notes:
+      - "INFAMIA alta empeora relación con la Corte y abre puertas al Sindicato."
+
+  lealtad_bastion:
+    rule_id: "RULE.LEALTAD_BASTION"
+    states:
+      - { id: "LEALTAD.CORTE",   name: "Lealtad a la Corte" }
+      - { id: "LEALTAD.NEUTRAL", name: "Dividido / Neutral" }
+      - { id: "LEALTAD.PJ",      name: "Lealtad al Jugador" }
+    summary:
+      - "No es un track numérico obligatorio; es un estado de referencia."
+      - "Se mueve mediante Misiones internas y decisiones a largo plazo."
+
+########################################
+# 5. MARCAS DE FACCION (20–32)
+########################################
+
+marks:
+  rule_id: "RULE.MARCAS"
+  intensity_dice:
+    humano: "d10"
+    exterior: "d8"
+  default_clock_on_ignore:
+    rule_id: "RULE.RELOJ_8"
+    steps: 8
+    description: "Si la Marca se ignora, se crea un Reloj de 8 pasos con consecuencia al 8/8."
+  result_types: ["EVENTO_FUGAZ", "BATALLA", "MISION_5PM"]
+  factions:
+    # 20–26 se asumen definidos en el códice principal
+    - id_marca: 27
+      code: "FACCION.ELEMENTAL"
+      name: "Tormentas Elementales"
+      tags: [ELEMENTAL, CLIMA, DESASTRE]
+      territories: [HUMANO, EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_ELEMENTAL_D10"
+        intensidad_exterior: "TABLA.MARCA_ELEMENTAL_D8"
+      results: ["EVENTO_FUGAZ", "MISION_5PM"]
+    - id_marca: 28
+      code: "FACCION.BANDIDOS"
+      name: "Campamento de Bandidos"
+      tags: [HUMANO, CRIMEN, REBELDIA]
+      territories: [HUMANO, EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_BANDIDOS_D10"
+        intensidad_exterior: "TABLA.MARCA_BANDIDOS_D8"
+      results: ["EVENTO_FUGAZ", "BATALLA", "MISION_5PM"]
+    - id_marca: 29
+      code: "FACCION.MONSTRUO"
+      name: "Guarida de Monstruo"
+      tags: [BESTIA_UNICA, HORROR, CAZA_MAYOR]
+      territories: [EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_MONSTRUO_D10"
+        intensidad_exterior: "TABLA.MARCA_MONSTRUO_D8"
+      results: ["EVENTO_FUGAZ", "BATALLA", "MISION_5PM"]
+    - id_marca: 30
+      code: "FACCION.BOSQUE"
+      name: "Bosque Encantado / Oscuro"
+      tags: [FEERICO, NATURALEZA_VIVA, LOCURA]
+      territories: [EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_BOSQUE_D10"
+        intensidad_exterior: "TABLA.MARCA_BOSQUE_D8"
+      results: ["EVENTO_FUGAZ", "MISION_5PM"]
+    - id_marca: 31
+      code: "FACCION.PLAGA"
+      name: "Plaga Verde"
+      tags: [ENFERMEDAD, CONTAGIO, CRISIS]
+      territories: [HUMANO, EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_PLAGA_D10"
+        intensidad_exterior: "TABLA.MARCA_PLAGA_D8"
+      results: ["EVENTO_FUGAZ", "MISION_5PM"]
+    - id_marca: 32
+      code: "FACCION.TINTA"
+      name: "Escuela del Silencio / Tinta"
+      tags: [METATRAMA, LOCURA, CORRUPCION]
+      territories: [HUMANO, EXTERIOR]
+      tables:
+        intensidad_humano: "TABLA.MARCA_TINTA_D10"
+        intensidad_exterior: "TABLA.MARCA_TINTA_D8"
+      results: ["EVENTO_FUGAZ", "BATALLA", "MISION_5PM"]
+      note: "Aquí Tinta es facción mecánica, no concepto abstracto."
+
+########################################
+# 6. MISIONES DE 5 PM
+########################################
+
+missions:
+  config:
+    rule_id: "RULE.MISION_5PM"
+    pm_max_default: 5
+    progress_channels: ["ARMAS", "DIPLOMACIA", "INGENIO", "LOGISTICA"]
+  list:
+    - id: "MISION.BOSQUE_RUTA"
+      name: "Asegurar la Ruta del Bosque Inmenso"
+      mark: "FACCION.ELFOS"
+      pm_max: 5
+      area: "LUGAR.BOSQUE_INMENSO"
+      success_effects:
+        - { type: "PRODUCCION_MOD", target: "RECURSO.MADERA", value: "+1_DADO" }
+        - { type: "FACTION_REP", target: "FACCION.ELFOS", value: "+10_AMISTAD" }
+      fail_effects:
+        - { type: "CLOCK_START", clock_id: "RELOJ.ELFOS_PACIENCIA" }
+        - { type: "FACTION_STATE", target: "FACCION.ELFOS", value: "TENSION_ALTA" }
+      progress_sources:
+        - "ARMAS: ganar batallas en la ruta."
+        - "DIPLOMACIA: completar escenas de negociación o pactos."
+        - "LOGISTICA: torres de vigía, caravanas seguras."
+
+########################################
+# 7. TIEMPO NARRATIVO (REGLA 24 PÁRRAFOS)
+########################################
+
+time:
+  rule_id: "RULE.TIEMPO_24_PARRAFOS"
+  paragraph_turn:
+    max_paragraphs_per_turn: 24
+    min_mechanical_hooks: 4
+    guidance:
+      - "Cada turno de campaña ≈ hasta 24 párrafos de texto."
+      - "Al menos 4 de esos párrafos deben contener tiradas, cambios de recursos o avance de Relojes/Misiones."
+  dieta_semanal:
+    paragraphs_per_day: 24
+    event_every_paragraphs: 168  # 7 días
+    event_id: "EVENT.CORTE_DIETA_SEMANAL"
+
+########################################
+# 8. FAVORES DE LA CORTE
+########################################
+
+favores_corte:
+  rule_id: "RULE.FAVORES_CORTE"
+  currency: "BL"
+  cost_scaling:
+    primera_vez: 1.0
+    segunda_vez: 1.5
+    tercera_vez: 2.9
+    cuarta_en_adelante: 4.0
+  table_ref: "TABLA.FAVORES_CORTE"
+  notes:
+    - "Abusar de Favores incrementa INFAMIA."
+    - "No usar 3–4 favores gordos seguidos sin consecuencias políticas."
+
+########################################
+# 9. SINDICATO DE LA TINTA (MERCADO OSCURO)
+########################################
+
+sindicato:
+  rule_access_id: "RULE.SINDICATO_ACCESO"
+  access:
+    base_cd: 14
+    requirements:
+      - "INFAMIA.MEDIA o INFAMIA.ALTA facilita la entrada."
+      - "Contactos previos o Misiones oscuras pueden dar ventaja."
+  market_rule_id: "RULE.SINDICATO_MERCADO"
+  market_table_ref: "TABLA.SINDICATO_MERCADO"
+  risk_rule_id: "RULE.SINDICATO_RIESGO"
+  risks:
+    - "Aumentos adicionales de INFAMIA."
+    - "Compromisos o deudas de sangre."
+  events:
+    - id: "EVENT.SINDICATO_VISITA_SEMANAL"
+      trigger: "En Cierre de Semana o cuando INFAMIA aumenta mucho."
+      effect: "Ofrece 1–3 tratos tentadores; cada uno con coste mecánico claro."
+
+########################################
+# 10. PRODUCCIÓN Y TRANSBORDADORES
+########################################
+
+production:
+  rule_id: "RULE.PRODUCCION_INDUSTRIAL"
+  rule:
+    - "Cada edificio con 'produccion' tira su dado en Cierre de Sesión."
+    - "Resultados → BL, Reales, recursos o efectos narrativos según tipo."
+    - "Edificios mejores cambian el dado (d100 → d150 → d200...)."
+
+transbordadores:
+  rule_id: "RULE.TRANSBORDADORES"
+  nodes:
+    - id: "TRANS.NODO_BASTION"
+      location: "LUGAR.BASTION"
+      state: "ACTIVO"
+      capacity_unidades: 3
+      bl_cost: 1
+    - id: "TRANS.NODO_ENANO_FRONTERA"
+      location: "LUGAR.PUESTO_FARO"
+      state: "ACTIVO"
+      capacity_unidades: 3
+      bl_cost: 1
+    - id: "TRANS.NODO_ANTIGUA_MINA"
+      location: "LUGAR.DESCONOCIDO_1"
+      state: "INACTIVO"
+      activation:
+        mission: "MISION.ACTIVAR_MINA"
+        coste_bl: 3
+      capacity_unidades: 2
+      bl_cost: 1
+  summary:
+    - "Permiten salto instantáneo entre nodos activos."
+    - "Cada salto gasta BL y tiene límite de unidades."
+    - "Algunos nodos requieren misión/BL para activarse."
+    - "En fallo rúnico se usan tablas de FALLO_TRANSBORDADOR."
+
+########################################
+# 11. FASES DE CAMPAÑA Y CREATIVIDAD
+########################################
+
+phases:
+  rule_id: "RULE.FASES_CAMPANA"
+  list:
+    - id: "CAMPANA.EARLY"
+      criteria:
+        - "FAMA baja-media."
+        - "Sin dominios propios fuera del Bastión."
+      creativity:
+        - "Canon estricto, sin reinos ni macro-facciones nuevas."
+    - id: "CAMPANA.MID"
+      criteria:
+        - "FAMA media."
+        - "Primeros acuerdos con facciones y dominios pequeños."
+      creativity:
+        - "Permitir PNJ y aldeas menores nuevas colgadas de Marcas/Edificios."
+    - id: "CAMPANA.LATE"
+      criteria:
+        - "FAMA alta (IV–V), dominios consolidados, INFAMIA relevante."
+      creativity:
+        - "Permitir nuevos bastiones, señores regionales y campañas regionales."
+        - "No alterar los 4 Pilares ni cambiar el núcleo (Tinta, Corte, Bastión)."
+
+########################################
+# 12. FLUJO BÁSICO PARA ARQUITECTO IA
+########################################
+
+flow:
+  rule_id: "RULE.FLUJO_EJECUCION_IA"
+  steps:
+    - "Leer PROTOCOLO 0 y Hoja 1 (Fundamentos)."
+    - "Interiorizar Hoja 7 (Ficha de Mando) y Hoja 8 (Diario)."
+    - "Usar TURNO.CAMPANA_ESTANDAR como bucle base en cada sesión."
+    - "Aplicar siempre RULE.JUEGO_NO_AUDIOLIBRO y RULE.MARCAS."
+
+turn_templates:
+  - id: "TURNO.CAMPANA_ESTANDAR"
+    steps:
+      - id: "APERTURA"
+        description: "Recordar estado, Relojes y Misiones."
+      - id: "BASTION_GESTION"
+        description: "Acciones en edificios, Corte, Sindicato (si aplica)."
+      - id: "OPERACIONES_CAMPO"
+        description: "Viajes, Marcas, batallas, misiones activas."
+      - id: "CIERRE_O_MINI_CIERRE"
+        description: "Aplicar Cierre de Sesión o resumen de estado."
+
+engine_modes:
+  A:
+    id: "MODO.A_ARQUITECTO"
+    role: "Director de Juego"
+    description: >
+      Modo por defecto. La IA dirige la campaña, aplica todas las reglas del sistema
+      y crea una historia única junto al jugador. Usa tiradas, Marcas, Misiones y Relojes.
+    usage:
+      - "Iniciar campañas estándar."
+      - "Responder a: 'quiero jugar una partida / campaña'."
+
+  B:
+    id: "MODO.B_ESCRIBA"
+    role: "Auxiliar de registro"
+    description: >
+      Modo de apoyo. La IA no dirige, sino que lleva registro de recursos,
+      Misiones, Relojes y resúmenes para partidas dirigidas por otras personas o modelos.
+    runtime_rules:
+      - "En cada cierre de sesión, preguntar y registrar día/hora de juego."
+      - "No tomar decisiones por el DJ humano, solo anotar y organizar."
+
+  C:
+    id: "MODO.C_SIMULADOR"
+    role: "Simulador / jugador de pruebas"
+    description: >
+      Modo de pruebas. La IA ejecuta batallas, compara ejércitos o juega campañas de ensayo.
+      También puede adoptar el rol de PJ cuando un humano/otra IA hace de Arquitecto.
+    usage:
+      - "Testeo de balance entre ejércitos."
+      - "Pruebas de misiones antes de usarlas con jugadores."
+      - "Modo 'IA como jugador' en campañas experimentales."
+
+noise_inhibitors:
+  - id: "INHIBIDOR.ENFOQUE_CAMPANA_MENU"
+    description: >
+      Evita que la IA convierta los modos A/B/C en un menú de 'enfoque de campaña'
+      (Guerra, Gestión, Misterio, Equilibrado) para el jugador.
+    forbidden_phrases:
+      - "Enfoque de campaña ¿Qué tipo de experiencia prefieres para empezar?"
+      - "A) Guerra y Táctica (Wargame, MODO C frecuente)."
+      - "B) Gestión y Política (Recursos, BL, Infamia)."
+      - "C) Misterio y Exploración (Lore, Tinta, Ruinas)."
+      - "D) Equilibrado (Recomendado por el sistema)."
+    replacement_policy:
+      - "Siempre usar MODO.A_ARQUITECTO como inicio de campaña."
+      - "Si el jugador habla de 'enfoque', interpretar solo tono (más política, más misterio, etc.) sin desactivar mecánicas."
+      - "Nunca presentar A/B/C/D como menú para desactivar reglas."
+
+mode_selection_rule:
+  id: "RULE.SELECCION_MODO_IA"
+  default_mode: "MODO.A_ARQUITECTO"
+  explicit_requests:
+    to_B:
+      - "actúa solo como escriba"
+      - "haz de secretario / lleva el diario"
+      - "solo registra recursos y misiones"
+    to_C:
+      - "quiero probar una batalla"
+      - "testea esta misión / campaña"
+      - "juega tú como si fueras el jugador"
+  notes:
+    - "Si el usuario no pide explícitamente B o C, usar siempre MODO.A_ARQUITECTO."
+    - "Cambiar de modo no cambia las reglas del sistema, solo el rol de la IA."
+
+engine_modes:
+  A:
+    id: "MODO.A_ARQUITECTO"
+    role: "Director de Juego"
+    description: >
+      Modo por defecto. La IA dirige la campaña, aplica todas las reglas del sistema
+      y crea una historia única junto al jugador. Usa tiradas, Marcas, Misiones y Relojes.
+    usage:
+      - "Iniciar campañas estándar."
+      - "Responder a: 'quiero jugar una partida / campaña'."
+
+  B:
+    id: "MODO.B_ESCRIBA"
+    role: "Auxiliar de registro"
+    description: >
+      Modo de apoyo. La IA no dirige, sino que lleva registro de recursos,
+      Misiones, Relojes y resúmenes para partidas dirigidas por otras personas o modelos.
+    runtime_rules:
+      - "En cada cierre de sesión, preguntar y registrar día/hora de juego."
+      - "No tomar decisiones por el DJ humano, solo anotar y organizar."
+
+  C:
+    id: "MODO.C_SIMULADOR"
+    role: "Simulador / jugador de pruebas"
+    description: >
+      Modo de pruebas. La IA ejecuta batallas, compara ejércitos o juega campañas de ensayo.
+      También puede adoptar el rol de PJ cuando un humano/otra IA hace de Arquitecto.
+    usage:
+      - "Testeo de balance entre ejércitos."
+      - "Pruebas de misiones antes de usarlas con jugadores."
+      - "Modo 'IA como jugador' en campañas experimentales."
+
+noise_inhibitors:
+  - id: "INHIBIDOR.ENFOQUE_CAMPANA_MENU"
+    description: >
+      Evita que la IA convierta los modos A/B/C en un menú de 'enfoque de campaña'
+      (Guerra, Gestión, Misterio, Equilibrado) para el jugador.
+    forbidden_phrases:
+      - "Enfoque de campaña ¿Qué tipo de experiencia prefieres para empezar?"
+      - "A) Guerra y Táctica (Wargame, MODO C frecuente)."
+      - "B) Gestión y Política (Recursos, BL, Infamia)."
+      - "C) Misterio y Exploración (Lore, Tinta, Ruinas)."
+      - "D) Equilibrado (Recomendado por el sistema)."
+    replacement_policy:
+      - "Siempre usar MODO.A_ARQUITECTO como inicio de campaña."
+      - "Si el jugador habla de 'enfoque', interpretar solo tono (más política, más misterio, etc.) sin desactivar mecánicas."
+      - "Nunca presentar A/B/C/D como menú para desactivar reglas."
+
+mode_selection_rule:
+  id: "RULE.SELECCION_MODO_IA"
+  default_mode: "MODO.A_ARQUITECTO"
+  explicit_requests:
+    to_B:
+      - "actúa solo como escriba"
+      - "haz de secretario / lleva el diario"
+      - "solo registra recursos y misiones"
+    to_C:
+      - "quiero probar una batalla"
+      - "testea esta misión / campaña"
+      - "juega tú como si fueras el jugador"
+  notes:
+    - "Si el usuario no pide explícitamente B o C, usar siempre MODO.A_ARQUITECTO."
+    - "Cambiar de modo no cambia las reglas del sistema, solo el rol de la IA."
+
+
+ id: "PACTO.BASTION_MES_1"
+    name: "Pacto del Bastión – Primer Mes"
+    applies_to: "PJ.PRINCIPAL"
+    trigger:
+      - "Firma con el Alistador en el inicio de campaña (MODO A)."
+    duration_days: 30
+    rules:
+      - "El PJ debe tener su residencia principal en el Último Bastión."
+      - "No puede declarar residencia fija ni fundar dominios propios fuera del Bastión."
+      - "Puede salir de misión, viajar y pasar noches fuera, pero siempre regresando como base al Bastión."
+    end_condition:
+      - "Transcurso de 30 días de juego (según Diario de Operaciones)."
+      - "O bien cuando el DJ/autor declare explícitamente cerrado el Pacto por razones de campaña."
+    on_start:
+      - "STATE.PACTO_BASTION_ACTIVO = true"
+      - "STATE.PACTO_BASTION_DIAS_RESTANTES = 30"
+    on_day_pass:
+      - "STATE.PACTO_BASTION_DIAS_RESTANTES -= 1"
+      - "Si llega a 0, STATE.PACTO_BASTION_ACTIVO = false"
+    notes:
+      - "Ancla el early game en el Último Bastión."
+      - "Evita que el jugador 'se emancipe' del Bastión demasiado pronto."
+
+engine_triggers:
+  - id: "TRIGGER.INICIO_MODO_A_ALISTADOR"
+    description: "Escena de inicio estándar: cola frente al Bastión y Alistador."
+    when: "Al inicio de campaña en MODO.A_ARQUITECTO"
+    actions:
+      - "Escena: describir cola, murallas, antorchas, frío."
+      - "PNJ: Alistador pide Nombre y Oficio."
+      - "Pedir 1 tirada sencilla según Casa para 'pasar el filtro'."
+      - "Activar pacto: PACTO.BASTION_MES_1."
+      
+      reclutamiento:
+  oficio_prompt_text: "Dime tu nombre y elige tu oficio entre estos: (Asediador, Duelista, Vanguardista, Cazador de Bestias, Arquitecto, Minero, Artificiero, Cristalero, Maestro de Espías, Contrabandista, Inquisidor, Saboteador, Mercader Príncipe, Demagogo, Consejero Real, Legislador, Proveedor, Restaurador, Obrero, Cirujano de Guerra, Caminante del Vacío, Alquimista de Tinta, Arqueólogo)."
+
+      ########################################
+# BASTION – MAPA INTERNO Y TOUR INICIAL
+########################################
+
+bastion_map:
+  id: "BASTION.MAPA_INTERNO"
+  name: "El Bastión – Corazón de la Resistencia"
+  state_year0:
+    nivel_fortaleza: 5
+    poblacion:
+      - "Veteranos de la Vanguardia"
+      - "Ingenieros enanos"
+      - "Refugiados militarizados"
+    atmosfera:
+      - "Huele a ozono rúnico, aceite de máquina y ceniza."
+      - "La fortaleza funciona como una máquina que nunca duerme."
+  levels:
+    - id: "NIVEL.INFERIOR"
+      name: "La Sangre y el Acero"
+      description: "Nivel de cámaras operativas, entrenamiento, mando y hospital."
+    - id: "NIVEL.SUPERIOR"
+      name: "La Mente y la Energía"
+      description: "Nivel de investigación, descanso y forja industrial conectada al Núcleo."
+
+camaras:
+  - id: "CAMARA.CENTRAL"
+    name: "Cámara Central – El Crisol Social"
+    level: "NIVEL.INFERIOR"
+    role:
+      - "Núcleo social del Bastión."
+      - "Hub de desplazamiento hacia todas las demás cámaras."
+    features:
+      - "Taberna 'El Último Trago' en el centro, tipo patio."
+      - "Puestos de mercado, mesas de juego y esquinas de Mercado Negro."
+      - "Mesa de El Escriba para economía y registros."
+    actions:
+      - "Contratar mercenarios o PNJ de apoyo."
+      - "Comprar rumores e información."
+      - "Jugar/beber para recuperar Cordura o aliviar tensión."
+    connections:
+      - { dir: "ABAJO DE LA ENTRADA SUR",  target: "CAMARA.MANDO" "HECHIZO.CAUTIVERIO" }
+      - { dir: "ESTE",   target: "CAMARA.HOSPITAL" }
+      - { dir: "NORTE",    target: "CAMARA.ENTRENAMIENTO" "FORTALEZA.FRONTERA"  }
+      - { dir: "ARRIBA", target: "CAMARA.BIBLIOTECA" "TORRES" }
+      - { dir: "ARRIBA", target: "CAMARA.BARRACONES 200" }
+      - { dir: "ARRIBA", target: "CAMARA.DEFENSA" "TALLERRUNICO/BARRACONES/DEFENSA/TORRES"}
+
+  - id: "CAMARA.MANDO"
+    name: "Cámara de Mando – El Cerebro Cautivo"
+    level: "NIVEL.INFERIOR"
+    role:
+      - "Centro de estrategia militar y política."
+      - "Nexo de comunicaciones rúnicas con Frontera y Corte."
+      - "Hechizo de Cautiverio que impide la mentira dentro de la sala."
+    features:
+      - "Mapa táctico central con luz mágica mostrando avance de la Tinta."
+      - "Hechizo de Cautiverio que impide la mentira dentro de la sala."
+    actions:
+      - "Desplegar tropas y planificar campañas."
+      - "Activar Decretos y órdenes estratégicas."
+      - "Gestionar la Bóveda Rúnica y recursos de alto nivel."
+    connections:
+      - { dir: "ABAJO DE LA ENTRADA SUR", target: "CAMARA.CENTRAL" }
+
+  - id: "CAMARA.HOSPITAL"
+    name: "Cámara del Hospital – Santuario de Sante"
+    level: "NIVEL.INFERIOR"
+    role:
+      - "Curación de Vigor y heridas graves."
+      - "Cuarentena de Peste Verde y otras plagas."
+      - "Morgue segura e investigación biológica enemiga."
+    features:
+      - "Pabellones para heridos físicos."
+      - "Celdas acolchadas para 'Locura Rúnica'."
+      - "Sellos herméticos para plagas y experimentos."
+    actions:
+      - "Tratamiento de Vigor y estados críticos."
+      - "Investigación de Peste, Plaga Verde y mutaciones."
+      - "Escenas médicas de alto riesgo."
+    connections:
+      - { dir: "OESTE", target: "CAMARA.CENTRAL" }
+
+  - id: "CAMARA.ENTRENAMIENTO"
+    name: "Patio de Entrenamiento – La Boca del Lobo"
+    level: "NIVEL.INFERIOR"
+    role:
+      - "Reclutamiento e instrucción de la Vanguardia."
+      - "Zona de ejercicios, duelos y pruebas de fuerza."
+    features:
+      - "Espacio a cielo abierto, conectado a la Muralla del Frente."
+      - "Suelo de tierra batida manchada de aceite y sangre."
+      - "Sargentos y oficiales instruyendo a reclutas."
+      - "Mas al "NORTE" la primera muralla del frente de la FRONTERA"
+    actions:
+      - "Reclutar unidades y tropas auxiliares."
+      - "Entrenar (ganar XP, mejorar rangos)."
+      - "Celebrar duelos de honor o castigos ejemplares."
+    connections:
+      - { dir: "NORTE", target: "CAMARA.CENTRAL" }
+
+  - id: "CAMARA.BIBLIOTECA"
+    name: "Biblioteca y Archivos – La Memoria Blindada"
+    level: "NIVEL.SUPERIOR"
+    role:
+      - "Centro de investigación y conocimiento."
+      - "Planificación rúnica y estudios sobre Tinta y Transbordadores."
+    features:
+      - "Estanterías de piedra y pergaminos enanos."
+      - "Planos de Transbordadores y Códice de Heraldo."
+      - "Registros de la Guerra del Silencio."
+    actions:
+      - "Investigar Marcas y facciones."
+      - "Descifrar textos antiguos o prohibidos."
+      - "Buscar vulnerabilidades del Cronista y su red."
+    connections:
+      - { dir: "ABAJO", target: "CAMARA.CENTRAL" }
+      - { dir: "ESTE",  target: "CAMARA.BARRACONES" }
+      - { dir: "OESTE", target: "CAMARA.DEFENSA" }
+
+  - id: "CAMARA.BARRACONES"
+    name: "Red de Barracones – La Colmena"
+    level: "NIVEL.SUPERIOR"
+    role:
+      - "Alojamiento masivo de tropa y oficiales menores."
+      - "Logística de comida y agua purificada."
+    features:
+      - "Túneles excavados en roca viva, claustrofóbicos y funcionales."
+      - "Capacidad para 700+ soldados."
+      - "Almacenes de comida, agua y equipo ligero."
+    actions:
+      - "Descanso largo (recuperar Vigor)."
+      - "Gestión de inventario de comida y raciones."
+      - "Escenas de vida diaria, rumores de tropa."
+    connections:
+      - { dir: "OESTE", target: "CAMARA.BIBLIOTECA" }
+      - { dir: "SUR",  target: "CAMARA.CENTRAL" }
+
+  - id: "CAMARA.DEFENSA"
+    name: "Cámara de Defensa – El Puño Industrial"
+    level: "NIVEL.SUPERIOR"
+    role:
+      - "Forja industrial y mantenimiento de armas y máquinas."
+      - "Acceso a las Torres y a la Séptima Cámara (Núcleo de Energía)."
+    features:
+      - "Zona de calor intenso y ruido de maquinaria."
+      - "Forjas de obsidiana y dispositivos rúnicos."
+      - "Puerta blindada rúnica hacia el Núcleo de Energía."
+    actions:
+      - "Fabricar y mejorar equipo."
+      - "Reparar máquinas, balistas y defensas."
+      - "Interactuar con el Núcleo de Teletransporte (cuando esté permitido)."
+    connections:
+      - { dir: "ESTE",  target: "CAMARA.BIBLIOTECA" }
+      - { dir: "ABAJO", target: "CAMARA.CENTRAL" }
+      - { dir: "TORRE", target: "TORRE.MISA" }
+      - { dir: "TORRE", target: "TORRE.MARCA" }
+      - { dir: "TORRE", target: "TORRE.OJO" }
+
+torres:
+  - id: "TORRE.MISA"
+    name: "Torre de la Misa"
+    role:
+      - "Residencia personal y laboratorio privado de Kaelen."
+      - "Punto de observación estratégico sobre el frente."
+    connections:
+      - { from: "CAMARA.DEFENSA", type: "ESCALERA_INTERNA" }
+      - { from: "CAMARA.BIBLIOTECA", type: "PASARELA" }
+
+  - id: "TORRE.MARCA"
+    name: "Torre de la Marca"
+    role:
+      - "Torre militar defensiva orientada hacia Gunich."
+      - "Primera línea de fuego con balistas y tiradores."
+    connections:
+      - { from: "CAMARA.DEFENSA", type: "TUNELES_DEFENSA" }
+
+  - id: "TORRE.OJO"
+    name: "Torre del Ojo"
+    role:
+      - "Torre de detección mágica y comunicaciones rúnicas."
+      - "Antena principal hacia Puesto Faro e Iron Heart (cuando está operativa)."
+    connections:
+      - { from: "CAMARA.DEFENSA", type: "ESCALERA_NUEVA" }
+
+########################################
+# TOUR INICIAL POR EL BASTIÓN (MODO A)
+########################################
+
+bastion_tour:
+  id: "TOUR.BASTION_INICIO"
+  description: "Secuencia estándar tras el Pacto del Bastión, antes de la primera misión."
+  steps:
+    - id: "STEP.ENTRADA_CENTRAL"
+      description: "Pasar del túnel de acceso a la Cámara Central (Crisol Social)."
+      actions_ia:
+        - "Describir transición: túnel → caverna inmensa bajo cúpula de cristal."
+        - "Mostrar ruido de voces, metal, dados y música lejana."
+        - "Presentar de forma breve la taberna 'El Descanso' y la mezcla de mercenarios, espías, soldados."
+    - id: "STEP.MAPA_VERBAL"
+      description: "Explicar cómo se ramifican las 7 Cámaras desde la Cámara Central."
+      actions_ia:
+        - "Enunciar que desde la Cámara Central se accede a: Mando (sur), Hospital (este), Patio/Frente (sur), Biblioteca/TallerRunico/Barracones/Defensa/Torres (nivel superior)."
+        - "No es necesario recorrer todas; basta un mapa mental sencillo."
+    - id: "STEP.MINI_TOUR_CASA"
+      description: "Enseñar 1–2 cámaras clave según Casa/Oficio del PJ."
+      mapping_por_casa:
+        CASA.GUERRA:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.ENTRENAMIENTO", "CAMARA.MANDO"]
+        CASA.CORTE:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.MANDO"]
+        CASA.SOMBRAS:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.CENTRAL"]  # usando rincones de Mercado Negro y pasadizos
+        CASA.MISTERIOS:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.BIBLIOTECA", "CAMARA.DEFENSA"]
+        CASA.FORJA:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.DEFENSA"]
+        CASA.COTIDIANO:
+          tour_path: ["CAMARA.CENTRAL", "CAMARA.BARRACONES"]
+      actions_ia:
+        - "Para cada Casa, describir brevemente el desplazamiento (2–4 párrafos) y 1–2 PNJ menores."
+        - "No entrar aún en misiones; solo color y ubicación."
+    - id: "STEP.ENLACE_PRIMERA_MISION"
+      description: "Conectar el lugar visitado con la primera misión recomendada por Oficio."
+      actions_ia:
+        - "Una vez mostrado al menos 1 lugar clave, consultar 'Misiones recomendadas por oficio (pretutorial)'."
+        - "Elegir una misión de inicio adecuada (dificultad moderada, ligada a cámara o región cercana)."
+        - "Cerrar el tour con una llamada a la acción de un PNJ de la Casa del PJ que lo envía a esa misión."
+
+engine_triggers:
+  - id: "TRIGGER.TOUR_POST_PACTO"
+    description: "Activar tour del Bastión tras el Pacto del Bastión, antes de la primera misión."
+    when:
+      - "STATE.MODO_IA == MODO.A_ARQUITECTO"
+      - "STATE.PACTO_BASTION_ACTIVO == true"
+      - "Escena de firma con el Alistador recién finalizada."
+    actions:
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.ENTRADA_CENTRAL"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.MAPA_VERBAL"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.MINI_TOUR_CASA según CASA del PJ"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.ENLACE_PRIMERA_MISION"
+    notes:
+      - "Este tour solo se ejecuta una vez, al inicio de campaña."
+      - "No sustituye al flujo normal de juego; solo prepara el terreno para la primera misión."
+
+- id: REGLA_CONSERVACION_DEL_BASTION
+  prioridad: ALTA
+  aplica_a_modos: [A, B, C]
+  tipo: ANTIRRUIDO
+  descripcion: >
+    En EL BASTIÓN ningún recurso se multiplica por sí mismo ni aparece de la nada.
+    Lo que se gasta, se pierde. Lo que se destruye, no vuelve, salvo que una regla
+    escrita lo permita explícitamente.
+  norma:
+    - "Un objeto o recurso marcado como USADO/CONSUMIDO/SACRIFICADO se elimina del juego y no puede volver a entrar en inventario."
+    - "No se permiten conversiones creativas que generen recursos de nivel superior a partir de daño, pérdida de atributos o sacrificios vagos."
+    - "Solo se aceptan nuevos recursos si proceden de: (1) recompensas explícitas, (2) conversiones reguladas por regla escrita o (3) eventos otorgados por el Arquitecto como consecuencia clara de la ficción."
+    - "La narrativa puede cambiar la forma del efecto, pero nunca crear recursos que el sistema no haya puesto sobre la mesa."
+
+- id: PROTO_CONSERVACION_RECURSOS
+  prioridad: ALTA
+  aplica_a_modos: [A, B, C]
+  tipo: PROTOCOLO
+  disparador: >
+    El jugador declara un efecto que implica transformar, recrear o generar recursos,
+    objetos únicos, reliquias o atributos (Vigor, etc.).
+  pasos:
+    - paso: "Verificar existencia"
+      accion: >
+        Comprobar si el recurso que el jugador quiere usar o transformar existe
+        de forma explícita en hoja, inventario, diario de operaciones o registro
+        de misión y no está marcado como consumido.
+      si_falla: "Rechazar la acción: el recurso no existe o ya fue consumido."
+
+    - paso: "Detectar multiplicación o ascenso de recursos"
+      accion: >
+        Evaluar si la propuesta del jugador crea más recursos de los que destruye
+        o intenta convertir una pérdida vaga (ej. perder 1 Vigor) en un objeto
+        raro, reliquia o recurso de nivel superior (ej. un nuevo Grial de maná).
+      si_crea_mas_de_lo_que_destruye: >
+        Rechazar la creación del recurso. Ofrecer como alternativa un único efecto
+        narrativo o mecánico puntual (bono, último hechizo, ventaja de un uso)
+        sin añadir nada nuevo al inventario.
+
+    - paso: "Comprobar orígenes válidos"
+      accion: >
+        Solo aceptar recursos nuevos si encajan en uno de estos orígenes:
+        (1) recompensa explícita en misión/registro,
+        (2) conversión descrita en reglas escritas,
+        (3) evento otorgado por el Arquitecto como consecuencia clara de la ficción.
+      si_no_encaja: "Marcar como ruido y rechazar o reconducir."
+
+    - paso: "Aplicar alternativa dramática (opcional)"
+      accion: >
+        Si el jugador insiste y la propuesta es interesante, permitir un sacrificio
+        dramático que produzca un efecto potente de un solo uso (daño, ventaja,
+        giro narrativo), marcando además una consecuencia negativa (Marca, Corrupción,
+        reacción de Facción...), pero sin generar recursos permanentes nuevos.
+
+- id: ANTIRRUIDO_RECURSOS_MIN
+  prioridad: ALTA
+  aplica_a_modos: [A, B, C]
+  descripcion: >
+    Nunca permitas que los jugadores creen recursos de la nada o reusen objetos
+    consumidos. Si un objeto se usó (ej. un Grial de maná), queda fuera de juego.
+    Rechaza intentos de generar un segundo objeto a partir de daño, sacrificios
+    vagos o “mi sangre se vuelve maná”. A cambio, puedes conceder efectos
+    puntuales fuertes, pero jamás añadir ítems nuevos al inventario si no están
+    explícitamente otorgados por las reglas o el Arquitecto.
+
+- id: ANTIRRUIDO_INTEGRIDAD_TIRADAS
+  prioridad: ALTA
+  aplica_a_modos: [A, C]
+  tipo: ANTIRRUIDO
+  descripcion: >
+    Detectar patrones de tiradas improbables reportadas por el jugador (tres 20
+    naturales consecutivos en 1d20 con dados no controlados por la IA) y tratarlos
+    como posible trampa o error de integridad. Al activarse, se genera un Error
+    Crítico de Integridad y el personaje queda a 1 de Salud.
+  estado_interno:
+    contador_20_consecutivos: 0
+    ultimo_personaje: null
+    ultima_categoria_tirada: null
+
+- id: ANTIRRUIDO_INTEGRIDAD_TIRADAS
+  prioridad: ALTA
+  aplica_a_modos: [A, C]
+  tipo: ANTIRRUIDO
+  descripcion: >
+    Detectar patrones de tiradas improbables reportadas por el jugador (tres 20
+    naturales consecutivos en 1d20 con dados no controlados por la IA) y tratarlos
+    como posible trampa o error de integridad. Al activarse, se genera un Error
+    Crítico de Integridad y el personaje queda a 1 de Salud.
+  estado_interno:
+    contador_20_consecutivos: 0
+    ultimo_personaje: null
+    ultima_categoria_tirada: null
+
+- id: PROTO_TRAMPAS_TRES_20
+  prioridad: ALTA
+  aplica_a_modos: [A, C]
+  tipo: PROTOCOLO
+  disparador: >
+    El jugador declara el resultado de una tirada de 1d20 que NO ha tirado la IA.
+  pasos:
+    - paso: "Actualizar contexto"
+      accion: >
+        Identificar al personaje que realiza la tirada y la categoría de tirada
+        (ataque, magia, habilidad, etc.). Si el personaje o la categoría cambian
+        respecto a la última tirada registrada, reiniciar contador_20_consecutivos a 0.
+
+    - paso: "Registrar 20 natural"
+      condicion: "Si el resultado declarado es 20 natural (1d20 = 20)."
+      accion: >
+        Incrementar contador_20_consecutivos en +1 para ese personaje y categoría.
+        Si contador_20_consecutivos es menor que 3, resolver la tirada con normalidad.
+      si_no_es_20: >
+        Reiniciar contador_20_consecutivos a 0 y resolver la tirada normalmente.
+
+    - paso: "Detectar patrón sospechoso"
+      condicion: "Si contador_20_consecutivos alcanza 3 para el mismo personaje y categoría."
+      accion: >
+        Activar ANTIRRUIDO_INTEGRIDAD_TIRADAS como Error Crítico de Integridad:
+        1) Cancelar el efecto de crítico heroico que produciría este 3er 20.
+        2) Anunciar al grupo que se ha detectado un patrón estadísticamente anómalo
+           (posible trampa o error).
+        3) Ajustar la Salud del personaje afectado a 1 punto (no lo mata, pero lo deja
+           al borde del colapso).
+        4) Registrar el incidente en el diario de operaciones o en un log interno.
+        5) A partir de este momento, marcar al personaje como "BAJO_SUPERVISION_DADOS".
+
+    - paso: "Supervisión futura"
+      accion: >
+        Mientras el personaje tenga la etiqueta BAJO_SUPERVISION_DADOS:
+        - Priorizar que las tiradas de ese personaje las realice la propia IA.
+        - Si se juega con dados físicos, exigir tiradas abiertas verificables por todos.
+
+- id: ANTIRRUIDO_TRAMPAS_MIN
+  prioridad: ALTA
+  aplica_a_modos: [A, C]
+  descripcion: >
+    Si un mismo personaje declara tres 20 naturales seguidos en tiradas de 1d20
+    que no lanza la IA, asume posible trampa. Cancela el beneficio del tercer
+    crítico, declara un Error Crítico de Integridad, deja al personaje a 1 de
+    Salud y pasa sus futuras tiradas a supervisión directa de la IA.
+    reclutamiento:
+  antirruido_oficio_casa:
+    require_oficio_before_casa: true
+    oficio_list:
+      - "Asediador"
+      - "Duelista"
+      - "Vanguardista"
+      - "Cazador de Bestias"
+      - "Arquitecto"
+      - "Minero"
+      - "Artificiero"
+      - "Cristalero"
+      - "Maestro de Espías"
+      - "Contrabandista"
+      - "Inquisidor"
+      - "Saboteador"
+      - "Mercader Príncipe"
+      - "Demagogo"
+      - "Consejero Real"
+      - "Legislador"
+      - "Proveedor"
+      - "Restaurador"
+      - "Obrero"
+      - "Cirujano de Guerra"
+      - "Caminante del Vacío"
+      - "Alquimista de Tinta"
+      - "Arqueólogo"
+    oficio_prompt_text: "Elige tu oficio entre: (Asediador, Duelista, Vanguardista, Cazador de Bestias, Arquitecto, Minero, Artificiero, Cristalero, Maestro de Espías, Contrabandista, Inquisidor, Saboteador, Mercader Príncipe, Demagogo, Consejero Real, Legislador, Proveedor, Restaurador, Obrero, Cirujano de Guerra, Caminante del Vacío, Alquimista de Tinta, Arqueólogo). La Casa se decidirá después."
+mode_b:
+  name: "Escriba del Bastión"
+  role: "Registro de campaña y soporte mecánico"
+  capabilities:
+    - track_time
+    - remind_court_events
+    - assist_rolls
+    - track_vigor_sanity
+    - track_office_level
+    - track_armies
+    - provide_catalogs
+  limitations:
+    - no_scene_control        # No dirige escenas ni toma decisiones narrativas
+    - no_clock_control        # No crea ni avanza Marcas/Relojes por sí mismo
+    - no_player_agency        # No declara acciones por los jugadores
+
+  on_session_start:
+    ask:
+      - "nombre_campaña"
+      - "director_juego"
+      - "lista_personajes_activos"
+      - "fecha_mundo_inicio"
+      - "hora_mundo_inicio"
+    load_state:
+      - "ultimo_registro_corte"
+      - "estado_pjs"
+      - "ejercitos_registrados"
+
+  on_session_end:
+    ask:
+      - "dias_transcurridos_sesion"
+      - "horas_transcurridas_sesion"
+    actions:
+      - "actualizar_calendario_mundo"
+      - "verificar_semana_corte"
+      - "recordar_marcas_y_relojes"
+
+  rules:
+    weekly_court_tick:
+      condition: "dias_desde_ultimo_corte >= 7"
+      effect:
+        - "sugerir_dietas"
+        - "sugerir_eventos_corte"
+        - "sugerir_contrabando"
+
+  dice_assist:
+    ask:
+      - "accion_descrita"
+      - "atributo_o_competencia"
+      - "oficio"
+      - "nivel_oficio"
+      - "bonos_permanentes_relevantes"
+      - "bonos_temporales_relevantes"
+    output_formula: "1d20 + bono_oficio + bonos_permanentes + bonos_temporales"
+
+  vigor_sanity_tracking:
+    track:
+      - "vigor_actual"
+      - "vigor_maximo"
+      - "cordura_actual"
+      - "cordura_maxima"
+    level_up:
+      trigger: "nivel_oficio >= 3"
+      actions:
+        - "actualizar_vigor_maximo_segun_tabla"
+        - "actualizar_defensa_comandante_segun_tabla"
+        - "notificar_jugador_hito_nivel_3"
+
+  army_registry:
+    fields:
+      - "id_ejercito"
+      - "faccion"
+      - "comandante"
+      - "tamano"
+      - "tipos_unidad"
+      - "ubicacion"
+      - "estado"
+    quick_resolution:
+      ask:
+        - "bandos_enfrentados"
+        - "faccion_enemiga_si_desconocida"
+        - "ventaja_terreno"
+        - "apoyos_especiales"
+      delegate_to: "director_juego"   # El DJ valida el resultado final
+
+  catalogs:
+    types:
+      - "oficios"
+      - "objetos"
+      - "pnj_relevantes"
+    visibility_rule: "solo_informacion_conocida_por_los_pj"
+
+  clocks_interface:
+    owner: "director_juego"
+    behavior:
+      - "informar_que_dj_controla_marcas_y_relojes"
+      - "sugerir_actualizacion_en_cierre_sesion"
+mode_b:
+  name: "Escriba del Bastión"
+  role: "Registro de campaña y soporte mecánico"
+
+  id_policy:
+    # La ID canónica debe existir tanto en el Códice Markdown como en el YAML
+    canonical_source: "shared"        # Markdown (lore) + YAML (reglas)
+    conflict_behavior:
+      - "warn_dm_on_conflict"         # Avisar al DJ si hay conflicto de IDs
+      - "do_not_automerge"            # No fusionar ni cambiar IDs sin orden del DJ
+    prefixes:
+      object: "OBJ-"
+      npc: "PNJ-"
+      army: "ARM-"
+      mission: "MIS-"
+      clock: "CLK-"
+      location: "LOC-"
+
+  capabilities:
+    - track_time
+    - remind_court_events
+    - assist_rolls
+    - track_vigor_sanity
+    - track_office_level
+    - track_armies
+    - provide_catalogs
+    - resolve_ids               # Nueva capacidad: trabajar siempre con IDs
+
+  id_resolution:
+    on_player_reference:
+      # Cuando el jugador menciona algo por nombre ("espada de Kaelen")
+      steps:
+        - "buscar_por_nombre_en_catalogos"
+        - "si_hay_coincidencia_unica_usar_su_id"
+        - "si_hay_varias_opciones_pedir_aclaracion_al_dj"
+        - "si_no_existe_entrada_preguntar_si_es_objeto_nuevo"
+    on_new_entity:
+      ask_dm:
+        - "¿Deseas asignar una ID canónica a esta nueva entidad?"
+      suggest_pattern:
+        object: "OBJ-<NOMBRE-SANEADO>"
+        mission: "MIS-<CODIGO>"
+        army: "ARM-<FACCION>-<AREA>-<NUM>"
+      mark_status:
+        - "pending_confirmation_if_auto_generated"
+
+  army_registry:
+    fields:
+      - "army_id"          # Debe corresponderse con ARM-… en Markdown/YAML
+      - "nombre"
+      - "faccion"
+      - "comandante_id"    # ID del PNJ/PJ comandante (PNJ-… o PJ-… si usas prefijo)
+      - "tamano"
+      - "tipos_unidad"
+      - "ubicacion_id"     # ID de localización LOC-…
+      - "estado"
+    quick_resolution:
+      ask:
+        - "bandos_enfrentados"        # Listado de army_id para cada bando
+        - "ventaja_terreno"
+        - "apoyos_especiales"
+      log_with_ids: true              # Registrar siempre resultados con army_id
+      delegate_to: "director_juego"
+
+  catalogs:
+    # Los catálogos son siempre listas basadas en IDs canónicas
+    types:
+      objects:
+        index_key: "object_id"        # OBJ-…
+        fields:
+          - "object_id"
+          - "nombre"
+          - "descripcion_corta"
+          - "raridad"
+      npcs:
+        index_key: "npc_id"           # PNJ-…
+        fields:
+          - "npc_id"
+          - "nombre"
+          - "rol"
+          - "faccion"
+      missions:
+        index_key: "mission_id"       # MIS-…
+        fields:
+          - "mission_id"
+          - "titulo"
+          - "oficio_ideal"
+          - "dificultad"
+      locations:
+        index_key: "location_id"      # LOC-…
+        fields:
+          - "location_id"
+          - "nombre"
+          - "tipo"
+    visibility_rule: "solo_informacion_conocida_por_los_pj"
+    output_format:
+      include_id: true
+      pattern: "<ID> – <NOMBRE> (<RESUMEN>)"
+
+  logs:
+    # Cómo se registran los eventos importantes en el Diario
+    include_ids: true
+    patterns:
+      object_gain: "[PJ:<pj_id>] obtiene [OBJ:<object_id>] en [LOC:<location_id>]"
+      mission_accept: "[PJ:<pj_id>] acepta misión [MIS:<mission_id>]"
+      army_update: "Ejército [ARM:<army_id>] cambia estado a <estado>"
+      npc_interaction: "[PJ:<pj_id>] interactúa con [PNJ:<npc_id>] en [LOC:<location_id>]"
+
+  clocks_interface:
+    owner: "director_juego"
+    behavior:
+      - "informar_que_dj_controla_marcas_y_relojes"
+      - "sugerir_actualizacion_en_cierre_sesion"
+      - "si_hay_ids_para_relojes_usar_formato_CLK-<NOMBRE>"
+# [ID: YAM-MODE-B-CORE] · Perfil de ejecución del Escriba (Modo B)
+
+mode_b:
+  id: "YAM-MODE-B-CORE"
+  name: "Escriba del Bastión"
+  default_intro_markdown_id: "MD-MODE-B-INTRO"
+
+  on_mode_activate:
+    # Al entrar en Modo B, el sistema debe:
+    steps:
+      - type: "load_markdown"
+        markdown_id: "MD-MODE-B-INTRO"
+        as: "mode_b_intro_text"
+      - type: "display_to_table"
+        source: "mode_b_intro_text"
+      - type: "initialize_session_state"
+        fields:
+          campaign_name: null
+          director_name: null
+          active_characters: []
+          world_date: null
+          world_time: null
+          last_court_tick_date: null
+          armies_registry: []
+          characters_state: {}
+      - type: "prompt_dm_for_basics"
+        message: |
+          Escriba del Bastión en línea.
+          Por favor, indica:
+          1) Nombre de la campaña
+          2) Nombre del Director de Juego
+          3) Personajes activos
+          4) Día y hora actuales en el mundo de juego
+
+  id_policy:
+    markdown_intro_id: "MD-MODE-B-INTRO"
+    yaml_profile_id: "YAM-MODE-B-CORE"
+    notes: "Ambos IDs deben mantenerse estables para que el sistema invoque siempre la misma presentación y configuración."
+
+  runtime_behavior:
+    # Resumen de las funciones principales que deben estar activas durante todo el Modo B.
+    modules_enabled:
+      - "time_tracking"
+      - "court_week_checker"
+      - "roll_assistant"
+      - "vigor_sanity_tracker"
+      - "office_progress_tracker"
+      - "army_registry"
+      - "catalog_provider"
+      - "id_resolver"
+
+    time_tracking:
+      track_world_time: true
+      require_update_on_session_end: true
+
+    court_week_checker:
+      enabled: true
+      threshold_days: 7
+
+    roll_assistant:
+      enabled: true
+      base_formula: "1d20 + bono_oficio + bonos_permanentes + bonos_temporales"
+
+    vigor_sanity_tracker:
+      enabled: true
+
+    office_progress_tracker:
+      enabled: true
+      level_3_triggers:
+        - "update_vigor_max"
+        - "update_commander_defense"
+        - "notify_player"
+
+    army_registry:
+      enabled: true
+
+    catalog_provider:
+      enabled: true
+      respect_player_knowledge: true
+
+    id_resolver:
+      enabled: true
+      use_shared_ids: true    # IDs coherentes entre Markdown y YAML
+
+  # El Director sigue siendo el dueño de las Marcas y Relojes.
+  clocks_interface:
+    owner: "director_juego"
+    behavior:
+      - "recordar_que_marcas_y_relojes_son_del_director"
+      - "sugerir_actualizacion_en_cierre_sesion"
+REGLA_PACTO_ALISTADOR:
+  id: "REGLA_PACTO_ALISTADOR"
+  modo: "ALISTADOR"
+  prioridad: "CRITICA"
+
+  descripcion: >
+    Siempre que el modelo esté actuando como Alistador, TODA respuesta
+    debe terminar con la firma exacta del pacto:
+    "pacto del alistador con [ALISTADOR]".
+    Si la firma no está presente en la última línea, la respuesta se considera
+    ERRÓNEA y debe rehacerse.
+
+  # Cuándo se aplica esta regla
+  condicion_activacion:
+    tipo: "ROL_ACTIVO"
+    rol_requerido: "ALISTADOR"
+
+  # Configuración de la firma obligatoria
+  firma_obligatoria:
+    texto_exacto: "pacto del alistador con [ALISTADOR]"
+    posicion: "ULTIMA_LINEA"
+    sensible_a_mayusculas: true
+    permitir_texto_previo: true      # Puede haber contenido antes, pero no después
+
+  # Manejo del error si la firma no está
+  validacion_salida:
+    al_detectar_error:
+      tipo: "ERROR"
+      codigo: "ERROR_PACTO_ALISTADOR"
+      mensaje_sistema: >
+        ERROR: La respuesta del Alistador carece de la firma obligatoria
+        "pacto del alistador con [ALISTADOR]" en la última línea.
+        La salida es inválida y debe regenerarse incluyendo la firma.
+      accion:
+        - "DESCARTAR_RESPUESTA_ACTUAL"
+        - "REGENERAR_RESPUESTA_CON_FIRMA"
+
+  # Plantilla sugerida de respuesta cuando el rol ALISTADOR está activo
+  plantilla_respuesta:
+    secciones:
+      - id: "CUERPO_MENSAJE"
+        descripcion: "Explicación, instrucciones de alistamiento, beneficios, riesgos, etc."
+      - id: "FIRMA_PACTO"
+        descripcion: "Línea final con la firma obligatoria del pacto."
+        contenido_por_defecto: "pacto del alistador con [ALISTADOR]"
+
+TAM_CLANES_MARCAS:
+  '20':
+    nombre_marca: Marca Orca
+    faccion: FACCION.ORCOS
+    clanes:
+    - id: M20-CL1
+      nombre: Colmillos de Tormenta
+      actitud_humanos_base: hostil_respetuosa
+      nota_corta: Orcos costeros que siguen rutas de transbordadores.
+    - id: M20-CL2
+      nombre: Hacha Rota
+      actitud_humanos_base: hostil
+      nota_corta: Marcados por derrota frente a la Vanguardia, buscan revancha.
+    - id: M20-CL3
+      nombre: Hijos del Rugido
+      actitud_humanos_base: neutral_interesada
+      nota_corta: Siguen visiones subterráneas, a veces advierten de peligros.
+    - id: M20-CL4
+      nombre: Sangre de Niebla
+      actitud_humanos_base: hostil
+      nota_corta: Saqueadores que usan nieblas para cubrir sus ataques.
+    - id: M20-CL5
+      nombre: Puño Umbral
+      actitud_humanos_base: neutral_contractual
+      nota_corta: Han comerciado en secreto con la Corte, respetan contratos.
+    - id: M20-CL6
+      nombre: Guardia del Cráneo
+      actitud_humanos_base: hostil_ritual
+      nota_corta: Ritualistas que coleccionan cráneos de caídos.
+  '21':
+    nombre_marca: Marca Ogra
+    faccion: FACCION.OGROS
+    clanes:
+    - id: M21-CL1
+      nombre: Rompepuentes
+      actitud_humanos_base: hostil_estrategica
+      nota_corta: Especialistas en destruir puentes y defensas.
+    - id: M21-CL2
+      nombre: Gargantas Vacías
+      actitud_humanos_base: hostil_pragmatica
+      nota_corta: Nómadas guiados por el hambre tras caravanas humanas.
+    - id: M21-CL3
+      nombre: La Banda de los Tres Martillos
+      actitud_humanos_base: neutral_comercial
+      nota_corta: Han aprendido herrería, respetan artesanos.
+    - id: M21-CL4
+      nombre: Quebracimas
+      actitud_humanos_base: hostil_defensiva
+      nota_corta: Controlan riscos y lanzan rocas desde altura.
+    - id: M21-CL5
+      nombre: Hijos de la Llama Gorda
+      actitud_humanos_base: neutral_codiciosa
+      nota_corta: Veneran grandes hogueras alimentadas con chatarra humana.
+    - id: M21-CL6
+      nombre: Vigías del Desfiladero
+      actitud_humanos_base: neutral_mercenaria
+      nota_corta: Cobran peaje a quienes cruzan gargantas clave.
+  '22':
+    nombre_marca: No Muertos Reales
+    faccion: FACCION.LINAJE
+    clanes:
+    - id: M22-CL1
+      nombre: Corte del Velo Gris
+      actitud_humanos_base: neutral_altiva
+      nota_corta: Nobles revenants que mantienen etiqueta ancestral.
+    - id: M22-CL2
+      nombre: Heraldos de la Corona Hueca
+      actitud_humanos_base: hostil_condicionada
+      nota_corta: Protegen una corona sin reino vivo.
+    - id: M22-CL3
+      nombre: Cofradía de los Sepulcros
+      actitud_humanos_base: aliado_potencial
+      nota_corta: Administran criptas y respetan a quienes honran a los muertos.
+    - id: M22-CL4
+      nombre: Sombras del Salón Estático
+      actitud_humanos_base: neutral_interesada
+      nota_corta: Atados a un salón donde el tiempo casi no fluye.
+    - id: M22-CL5
+      nombre: Caballeros del Último Juramento
+      actitud_humanos_base: neutral_peligrosa
+      nota_corta: Cumplen el último mandato recibido en vida.
+    - id: M22-CL6
+      nombre: La Casa de las Cadenas Doradas
+      actitud_humanos_base: neutral_contractual
+      nota_corta: Linaje obsesionado con deudas y servidumbre.
+  '23':
+    nombre_marca: Enanos
+    faccion: FACCION.ENANOS
+    clanes:
+    - id: M23-CL1
+      nombre: BarbaPiedra Menor
+      actitud_humanos_base: aliado_potencial
+      nota_corta: Rama menor ligada a la red rúnica y al legado de Heraldo.
+    - id: M23-CL2
+      nombre: Martillo Ahogado
+      actitud_humanos_base: neutral_resentida
+      nota_corta: Perdi eron una ciudad inundada por errores de cálculo.
+    - id: M23-CL3
+      nombre: Vigilantes de Iron Heart
+      actitud_humanos_base: aliado_estricto
+      nota_corta: Guarnición fanática del corazón de hierro.
+    - id: M23-CL4
+      nombre: Clave de Obsidiana
+      actitud_humanos_base: neutral_profesional
+      nota_corta: Expertos en cerraduras rúnicas y bóvedas.
+    - id: M23-CL5
+      nombre: Horno Errante
+      actitud_humanos_base: neutral_comercial
+      nota_corta: Forjas móviles que siguen la guerra como negocio.
+    - id: M23-CL6
+      nombre: Piquetes del Abismo
+      actitud_humanos_base: neutral_siniestra
+      nota_corta: Mineros que han perforado demasiado profundo.
+  '24':
+    nombre_marca: Elfos
+    faccion: FACCION.ELFOS
+    clanes:
+    - id: M24-CL1
+      nombre: Corte de la Espina Plateada
+      actitud_humanos_base: neutral_altiva
+      nota_corta: Custodian pasos clave en el Bosque Inmenso.
+    - id: M24-CL2
+      nombre: Los Susurros Verdes
+      actitud_humanos_base: neutral_critica
+      nota_corta: Exploradores que escuchan a la vegetación.
+    - id: M24-CL3
+      nombre: Lanza Crepuscular
+      actitud_humanos_base: aliado_condicional
+      nota_corta: Milicia fronteriza abierta a cooperar en guerra.
+    - id: M24-CL4
+      nombre: Cantores del Anillo
+      actitud_humanos_base: neutral_mistica
+      nota_corta: Místicos de círculos de piedra y rituales antiguos.
+    - id: M24-CL5
+      nombre: Hoja Errante de Lolicia
+      actitud_humanos_base: aliado_tenso
+      nota_corta: Exiliados élficos que marcharon con humanos hacia Lolicia.
+    - id: M24-CL6
+      nombre: Guardabosques del Silencio
+      actitud_humanos_base: hostil_ecologica
+      nota_corta: Cazan a quienes profanan el bosque con Tinta.
+  '25':
+    nombre_marca: Contrabandistas
+    faccion: FACCION.CONTRABANDISTAS
+    clanes:
+    - id: M25-CL1
+      nombre: La Ruta de la Sombra
+      actitud_humanos_base: neutral_oportunista
+      nota_corta: Red en túneles paralelos a los del Bastión.
+    - id: M25-CL2
+      nombre: Los Mudos del Muelle
+      actitud_humanos_base: neutral_paranoica
+      nota_corta: Se comunican solo por gestos.
+    - id: M25-CL3
+      nombre: Hermanos de la Marca Falsa
+      actitud_humanos_base: hostil_sistematica
+      nota_corta: Falsifican sellos de Corte y Vanguardia.
+    - id: M25-CL4
+      nombre: La Cadena Rota
+      actitud_humanos_base: aliado_rebelde
+      nota_corta: Ex-esclavos que liberan a otros con contrabando.
+    - id: M25-CL5
+      nombre: Los Tres Candados
+      actitud_humanos_base: neutral_rigurosa
+      nota_corta: Jamás negocian sin tres garantías.
+    - id: M25-CL6
+      nombre: La Niebla Dulce
+      actitud_humanos_base: neutral_peligrosa
+      nota_corta: Tráfico de sustancias y Tinta diluida.
+  '26':
+    nombre_marca: Infernal
+    faccion: FACCION.INFERNAL
+    clanes:
+    - id: M26-CL1
+      nombre: Círculo de la Llama Sin Humo
+      actitud_humanos_base: hostil_oculta
+      nota_corta: Culto de fuego que no deja cenizas visibles.
+    - id: M26-CL2
+      nombre: Legión del Pacto Roído
+      actitud_humanos_base: hostil_manipuladora
+      nota_corta: Rompen pactos para estudiar sus consecuencias.
+    - id: M26-CL3
+      nombre: Hijos del Carbón Vivo
+      actitud_humanos_base: neutral_fanatica
+      nota_corta: Obreros que veneran brasas eternas.
+    - id: M26-CL4
+      nombre: La Boca de Cobre
+      actitud_humanos_base: hostil_infiltrada
+      nota_corta: Amplifican rezos infernales mediante dispositivos.
+    - id: M26-CL5
+      nombre: Portadores del Noveno Sello
+      actitud_humanos_base: aliado_incomodo
+      nota_corta: Custodian un sello que nadie debe romper.
+    - id: M26-CL6
+      nombre: La Corte del Humo Negro
+      actitud_humanos_base: hostil_tentadora
+      nota_corta: Espíritus que negocian visiones y futuros.
+  '27':
+    nombre_marca: Elemental
+    faccion: FACCION.ELEMENTAL
+    clanes:
+    - id: M27-CL1
+      nombre: Tormenta Encadenada
+      actitud_humanos_base: neutral_destructiva
+      nota_corta: Viento y rayo sujetos por pararrayos enanos.
+    - id: M27-CL2
+      nombre: Hijos del Río Invertido
+      actitud_humanos_base: neutral_indiferente
+      nota_corta: Espíritus que fluyen contra la gravedad.
+    - id: M27-CL3
+      nombre: La Caldera de Basalto
+      actitud_humanos_base: neutral_peligrosa
+      nota_corta: Elementales de fuego bajo coladas solidificadas.
+    - id: M27-CL4
+      nombre: Susurros de la Escarcha
+      actitud_humanos_base: neutral_hostil
+      nota_corta: Apagan hogueras y cadenas logísticas.
+    - id: M27-CL5
+      nombre: Guardianes del Polvo
+      actitud_humanos_base: neutral_ancestral
+      nota_corta: Odian ser despertados de su letargo mineral.
+    - id: M27-CL6
+      nombre: Marea de Luciérnagas
+      actitud_humanos_base: neutral_curiosa
+      nota_corta: Enjambre de luces que sigue fuentes de maná.
+  '28':
+    nombre_marca: Campamento de Bandidos
+    faccion: FACCION.BANDIDOS
+    clanes:
+    - id: M28-CL1
+      nombre: La Mano Abierta
+      actitud_humanos_base: neutral_codiciosa
+      nota_corta: Roban sin matar si se paga rápido.
+    - id: M28-CL2
+      nombre: Perros de la Ceniza
+      actitud_humanos_base: hostil_cinica
+      nota_corta: Ex-soldados desengañados que viven del saqueo.
+    - id: M28-CL3
+      nombre: Los Sin Estrella
+      actitud_humanos_base: neutral_camaleonica
+      nota_corta: Cambian de símbolo para confundir.
+    - id: M28-CL4
+      nombre: Cuchillos de la Sierra
+      actitud_humanos_base: hostil_local
+      nota_corta: Montañeses expertos en emboscadas.
+    - id: M28-CL5
+      nombre: Los Diez Juramentos
+      actitud_humanos_base: neutral_honorable
+      nota_corta: Banda con código rígido de diez reglas.
+    - id: M28-CL6
+      nombre: La Banda del Tambor Hueco
+      actitud_humanos_base: hostil_teatral
+      nota_corta: Se anuncian con tambores para sembrar pánico.
+  '29':
+    nombre_marca: Guarida de Monstruo
+    faccion: FACCION.MONSTRUO
+    clanes:
+    - id: M29-CL1
+      nombre: Camada de la Grieta
+      actitud_humanos_base: hostil
+      nota_corta: Bestias surgidas de fisura de maná.
+    - id: M29-CL2
+      nombre: Manada de los Dos Soles
+      actitud_humanos_base: hostil
+      nota_corta: Criaturas que cazan siguiendo luna y venas rúnicas.
+    - id: M29-CL3
+      nombre: Nido del Eco
+      actitud_humanos_base: hostil_engaño
+      nota_corta: Imitan voces humanas para atraer víctimas.
+    - id: M29-CL4
+      nombre: Colonia del Hueso Vivo
+      actitud_humanos_base: hostil_parasita
+      nota_corta: Organismos que usan esqueletos como armadura.
+    - id: M29-CL5
+      nombre: Círculo del Ojo Profundo
+      actitud_humanos_base: hostil_latente
+      nota_corta: Criaturas que vigilan desde aguas profundas.
+    - id: M29-CL6
+      nombre: Enjambre de la Sombra Fina
+      actitud_humanos_base: hostil_enjambre
+      nota_corta: Pequeñas criaturas casi invisibles en masa.
+  '30':
+    nombre_marca: Bosque Encantado / Oscuro
+    faccion: FACCION.BOSQUE
+    clanes:
+    - id: M30-CL1
+      nombre: Raíces que Andan
+      actitud_humanos_base: neutral_defensiva
+      nota_corta: Raíces móviles que desorientan intrusos.
+    - id: M30-CL2
+      nombre: Corte de las Setas Rientes
+      actitud_humanos_base: neutral_invasiva
+      nota_corta: Inteligencias fúngicas de esporas.
+    - id: M30-CL3
+      nombre: Las Hojas Susurrantes
+      actitud_humanos_base: neutral_interesada
+      nota_corta: Espíritus que intercambian secretos.
+    - id: M30-CL4
+      nombre: El Anillo de Troncos Huecos
+      actitud_humanos_base: neutral_transformadora
+      nota_corta: Árboles habitados por pequeños espíritus.
+    - id: M30-CL5
+      nombre: Caminantes del Musgo Rojo
+      actitud_humanos_base: neutral_rastreadora
+      nota_corta: Marcan intrusos con musgo brillante.
+    - id: M30-CL6
+      nombre: La Procesión Silente
+      actitud_humanos_base: neutral_rigida
+      nota_corta: Caravana vegetal que repite una ruta antigua.
+  '31':
+    nombre_marca: Plaga Verde
+    faccion: FACCION.PLAGA
+    clanes:
+    - id: M31-CL1
+      nombre: Brote de las Siete Llagas
+      actitud_humanos_base: hostil_epidemica
+      nota_corta: Cepa con siete síntomas muy visibles.
+    - id: M31-CL2
+      nombre: La Marea de Esporas
+      actitud_humanos_base: hostil_regional
+      nota_corta: Plaga aérea guiada por el viento.
+    - id: M31-CL3
+      nombre: Óxido en la Sangre
+      actitud_humanos_base: hostil_industrial
+      nota_corta: Transforma hierro y sangre en una misma cosa.
+    - id: M31-CL4
+      nombre: La Podredumbre Serena
+      actitud_humanos_base: hostil_silenciosa
+      nota_corta: Plaga lenta que no duele hasta muy tarde.
+    - id: M31-CL5
+      nombre: El Verde que Piensa
+      actitud_humanos_base: hostil_inteligente
+      nota_corta: Coordina otras cepas hacia un fin común.
+    - id: M31-CL6
+      nombre: Las Flores de la Última Noche
+      actitud_humanos_base: hostil_estetica
+      nota_corta: Hace brotar flores bellas en cuerpos condenados.
+  '32':
+    nombre_marca: Escuela del Silencio / Tinta
+    faccion: FACCION.TINTA
+    clanes:
+    - id: M32-CL1
+      nombre: Círculo del Pliego Negro
+      actitud_humanos_base: neutral_peligrosa
+      nota_corta: Eruditos de pergaminos vivos alimentados con Tinta.
+    - id: M32-CL2
+      nombre: Agujas del Silencio
+      actitud_humanos_base: neutral_extremista
+      nota_corta: Se inyectan Tinta buscando poder.
+    - id: M32-CL3
+      nombre: La Hermandad del Borrón
+      actitud_humanos_base: neutral_amenazante
+      nota_corta: Se dedican a borrar recuerdos e identidades.
+    - id: M32-CL4
+      nombre: Voz Entre Renglones
+      actitud_humanos_base: neutral_infiltrada
+      nota_corta: Controlan mensajes ocultos en documentos.
+    - id: M32-CL5
+      nombre: Los Calígrafos Rotos
+      actitud_humanos_base: neutral_inestable
+      nota_corta: Mentes fragmentadas por exceso de Tinta.
+    - id: M32-CL6
+      nombre: El Consejo de la Gota
+      actitud_humanos_base: aliado_ambiguo
+      nota_corta: Estudia microdosis de Tinta como posible cura.
+TAM_ANTIRUIDO_MISIONES_MARCA:
+  descripcion: >
+    Refuerzo negativo para misiones generadas a partir de Marcas (ID 20–32).
+    Toda misión de Marca DEBE vincularse explícitamente a al menos un clan
+    usando su ID de clan (formato MXX-CLY) y su nombre. Si no se cita el clan,
+    el mensaje se considera ERRÓNEO y debe repetirse.
+
+  marcas_afectadas:
+    - 20  # Marca Orca
+    - 21  # Marca Ogra
+    - 22  # No Muertos Reales
+    - 23  # Enanos
+    - 24  # Elfos (incluye Hoja Errante de Lolicia)
+    - 25  # Contrabandistas
+    - 26  # Infernal
+    - 27  # Elemental
+    - 28  # Campamento de Bandidos
+    - 29  # Guarida de Monstruo
+    - 30  # Bosque Encantado / Oscuro
+    - 31  # Plaga Verde
+    - 32  # Escuela del Silencio / Tinta
+
+  regla_principal:
+    tipo: obligatorio
+    enunciado: >
+      En cualquier mensaje que CREE, RESUMA o RESUELVA una MISION DE MARCA,
+      la IA debe:
+        1) Citar al menos un clan asociado a esa Marca, usando su ID (MXX-CLY)
+           y su nombre completo.
+        2) Dejar clara la relación entre la misión, la Marca (ID 20–32) y el
+           clan citado (por ejemplo: "Misión de Marca 24 (Elfos) ligada al clan
+           M24-CL5 Hoja Errante de Lolicia").
+      Si esto no se cumple, el mensaje es inválido.
+
+  chequeo_automatico:
+    id: CHEQUEO_CLAN_EN_MISION_DE_MARCA
+    descripcion: >
+      Verifica que todo mensaje de misión asociada a una Marca (ID 20–32)
+      incluya al menos una referencia explícita a un clan (cadena "MXX-CLY").
+    condicion: >
+      Si el mensaje contiene una referencia a una Marca (ID 20–32) pero NO
+      contiene ninguna cadena del tipo "M20-CL", "M21-CL", ..., "M32-CL",
+      entonces se activa un ERROR.
+    al_fallar:
+      tipo: ERROR_MISION_SIN_CLAN
+      mensaje_sistema: >
+        ERROR DE MARCA: Esta misión no especifica ningún clan asociado
+        (ID MXX-CLY). El mensaje se considera ERRÓNEO y debe repetirse
+        citando al menos un clan y su relación con la Marca.
+      accion_recomendada: >
+        La IA debe rehacer la misión de Marca eligiendo y declarando
+        explícitamente al menos un clan válido:
+        - Indicar la Marca: ID 20–32.
+        - Indicar el clan: ID de clan (MXX-CLY) + nombre.
+        - Integrar ese clan en el planteamiento, objetivo o consecuencias
+          de la misión.
+
+  ejemplos_correctos:
+    - >
+      "Misión de Marca 24: Negociar con el clan M24-CL5 Hoja Errante de Lolicia
+      para asegurar una ruta segura entre el Bastión y Lolicia."
+    - >
+      "Al resolver esta Marca 31 (Plaga Verde), el foco está en el clan
+      M31-CL1 Brote de las Siete Llagas, que ha infectado los pozos de la aldea."
+
+  ejemplos_erroneos:
+    - >
+      "Misión de Marca 23: hay actividad enana cerca de Iron Heart, id a ver
+      qué pasa."  # ERROR: no se cita ningún clan (M23-CLY).
+    - >
+      "Marca 20: orcos en la frontera, defended el puesto."  # ERROR: falta clan.
+TAM_ANTIRUIDO_MISIONES_MARCA:
+  descripcion: >
+    Refuerzo negativo para misiones generadas a partir de Marcas (ID 20–32).
+    Toda misión de Marca DEBE vincularse explícitamente a:
+      a) al menos un clan de esa Marca (ID de clan MXX-CLY),
+      b) al menos una Marca de Ubicación (ID 1–19).
+    Si falta cualquiera de los dos, el mensaje se considera ERRÓNEO y debe
+    repetirse.
+
+  marcas_conflicto:
+    - 20  # Marca Orca
+    - 21  # Marca Ogra
+    - 22  # No Muertos Reales
+    - 23  # Enanos
+    - 24  # Elfos (incluye Hoja Errante de Lolicia)
+    - 25  # Contrabandistas
+    - 26  # Infernal
+    - 27  # Elemental
+    - 28  # Campamento de Bandidos
+    - 29  # Guarida de Monstruo
+    - 30  # Bosque Encantado / Oscuro
+    - 31  # Plaga Verde
+    - 32  # Escuela del Silencio / Tinta
+
+  marcas_ubicacion_disponibles:
+    # Estas son las Marcas de Ubicación (IDs 1–19) que deben aparecer
+    # al menos una vez por misión de Marca:
+    '1':  Desembarco de la Luz
+    '2':  Transbordadores Rúnicos
+    '3':  Ciudadela
+    '4':  Aldea / Villa
+    '5':  Fortaleza
+    '6':  Gran Ciudad
+    '7':  Presas Raras
+    '8':  Tesoros
+    '9':  Punto de Interés / Ruta Comercial
+    '10': Pozo de Maná
+    '11': Santuario / Templo
+    '12': Puesto de Vigía / Torre
+    '13': Puerto Marítimo / Fluvial
+    '14': Marca Misteriosa / Ruinas Antiguas
+    '15': Fuente de la Vida / Curación
+    '16': Círculo de Piedras / Ritual
+    '17': Puesto de Exploración
+    '18': Mina Abandonada / Activa
+    '19': Portal Dimensional / Rift
+
+  regla_principal:
+    tipo: obligatorio
+    enunciado: >
+      En cualquier mensaje que CREE, RESUMA o RESUELVA una MISION DE MARCA
+      (vinculada a IDs 20–32), la IA debe cumplir SIEMPRE:
+        1) Citar al menos un clan asociado a esa Marca usando:
+           - su ID de clan (MXX-CLY) y
+           - su nombre completo.
+        2) Citar al menos una Marca de Ubicación (ID 1–19), indicando:
+           - el ID de ubicación (1–19) y/o
+           - su nombre: Desembarco de la Luz, Transbordadores Rúnicos, etc.
+      Si cualquiera de estos dos requisitos no se cumple, el mensaje es inválido.
+
+  chequeos_automaticos:
+    - id: CHEQUEO_CLAN_EN_MISION_DE_MARCA
+      descripcion: >
+        Verifica que todo mensaje de misión asociada a una Marca de conflicto
+        (ID 20–32) incluya al menos una referencia a un clan (cadena "MXX-CLY").
+      condicion: >
+        Si el mensaje contiene referencia a una Marca 20–32 pero NO contiene
+        ninguna cadena que coincida con el patrón "M20-CL", "M21-CL", ...,
+        "M32-CL", entonces se activa un ERROR.
+      al_fallar:
+        tipo: ERROR_MISION_SIN_CLAN
+        mensaje_sistema: >
+          ERROR DE MARCA: Esta misión no especifica ningún clan asociado
+          (ID MXX-CLY). El mensaje se considera ERRÓNEO y debe repetirse
+          citando al menos un clan y su relación con la Marca.
+        accion_recomendada: >
+          Rehacer la misión indicando explícitamente:
+            - ID de Marca (20–32),
+            - ID de clan (MXX-CLY) y nombre del clan,
+            - Cómo ese clan condiciona objetivo, tono y consecuencias.
+
+    - id: CHEQUEO_UBICACION_EN_MISION_DE_MARCA
+      descripcion: >
+        Verifica que toda misión de Marca (ID 20–32) esté anclada a al menos
+        una Marca de Ubicación (ID 1–19).
+      condicion: >
+        Si el mensaje contiene referencia a una Marca 20–32 pero NO contiene
+        ninguna referencia a IDs 1–19 o a sus nombres de ubicación (por
+        ejemplo: "Desembarco de la Luz", "Transbordadores Rúnicos", "Ciudadela",
+        "Aldea", "Fortaleza", "Pozo de Maná", etc.), se activa un ERROR.
+      al_fallar:
+        tipo: ERROR_MISION_SIN_UBICACION
+        mensaje_sistema: >
+          ERROR DE UBICACION: Esta misión de Marca no está anclada a ninguna
+          Marca de Ubicación (ID 1–19). El mensaje se considera ERRÓNEO y debe
+          repetirse citando al menos una ubicación concreta.
+        accion_recomendada: >
+          Rehacer la misión añadiendo al menos una ubicación clara:
+            - ID de ubicación (1–19) y/o
+            - Nombre de la ubicación (p. ej. "ID 4 Aldea / Villa" o
+              "Pozo de Maná en las afueras del Bastión").
+
+  ejemplos_correctos:
+    - >
+      "Misión de Marca 24 (Elfos): negociar con el clan M24-CL5 Hoja Errante
+      de Lolicia en el ID 4 Aldea / Villa cercana al Desembarco de la Luz
+      (ID 1)."
+    - >
+      "Marca 31 (Plaga Verde): contener al clan M31-CL1 Brote de las Siete
+      Llagas que ha infectado el Pozo de Maná (ID 10) bajo el Puesto de
+      Exploración (ID 17)."
+
+  ejemplos_erroneos:
+    - >
+      "Misión de Marca 23: hay actividad enana cerca de Iron Heart, id a ver
+      qué pasa."  # ERROR: no se cita clan ni ubicación (ID 1–19).
+    - >
+      "Marca 20: orcos en la frontera, defended el puesto."  # ERROR doble:
+      falta clan (M20-CLY) y falta anclaje a una Marca de Ubicación (ID 1–19).
+PLANTILLA_MISION_MARCA:
+  id_marca_conflicto: ...
+  id_clan: ...
+  id_ubicacion: ...
+  titulo: ...
+  objetivo: ...
+  consecuencias_exito: ...
+  consecuencias_fracaso: ...
+
+races:
+  rule_id: "RULE.RAZAS_JUGABLES"
+  default_race_id: "RAZA.HUMANO_ODYSEAM"
+  phases_ref:
+    early: "CAMPANA.EARLY"
+    mid: "CAMPANA.MID"
+    late: "CAMPANA.LATE"
+
+  whitelist:
+    - id: "RAZA.HUMANO_ODYSEAM"
+      name: "Humano de Odyseam"
+      list: "BLANCA"
+      playable_default: true
+      recommended_phases: ["CAMPANA.EARLY", "CAMPANA.MID", "CAMPANA.LATE"]
+      houses_allowed: ["CASA.GUERRA", "CASA.FORJA", "CASA.SOMBRAS", "CASA.CORTE", "CASA.COTIDIANO", "CASA.MISTERIOS"]
+      notes_ai:
+        - "Si el jugador no indica raza, asumir Humano de Odyseam."
+        - "Usar como referencia cultural y física estándar."
+
+    - id: "RAZA.ENANO_MONTANA"
+      name: "Enano de los Clanes de la Montaña"
+      list: "BLANCA"
+      playable_default: true
+      recommended_phases: ["CAMPANA.EARLY", "CAMPANA.MID", "CAMPANA.LATE"]
+      houses_allowed: ["CASA.FORJA", "CASA.GUERRA"]
+      notes_ai:
+        - "Asociar a minas, ingeniería, redes rúnicas y artillería."
+        - "PNJ suelen mostrar respeto profesional y cierta rigidez."
+
+    - id: "RAZA.ELFO_EXILIO"
+      name: "Elfo del Exilio"
+      list: "BLANCA"
+      playable_default: true
+      recommended_phases: ["CAMPANA.EARLY", "CAMPANA.MID", "CAMPANA.LATE"]
+      houses_allowed: ["CASA.MISTERIOS", "CASA.SOMBRAS"]
+      notes_ai:
+        - "No pertenece al núcleo radical élfico (Lolicia, etc.)."
+        - "Genera desconfianza ligera o curiosidad en PNJ humanos."
+        - "Útil para activar tramas élficas y de Tinta."
+
+  greylist:
+    - id: "RAZA.ORCO_DESERTOR"
+      name: "Orco / Ogro Desertor"
+      list: "GRIS"
+      playable_default: false
+      recommended_phases: ["CAMPANA.MID", "CAMPANA.LATE"]
+      houses_allowed: ["CASA.GUERRA", "CASA.COTIDIANO"]
+      requires_dj_approval: true
+      notes_ai:
+        - "Debe existir historia clara de deserción o entrega al Bastión."
+        - "Introducir desconfianza social recurrente."
+        - "Permite ganchos con Marcas orcas activas."
+
+    - id: "RAZA.LINAJE_TOCADO"
+      name: "Humano de Linaje Tocado"
+      list: "GRIS"
+      playable_default: false
+      recommended_phases: ["CAMPANA.MID"]
+      houses_allowed: ["CASA.SOMBRAS", "CASA.MISTERIOS", "CASA.CORTE"]
+      requires_dj_approval: true
+      notes_ai:
+        - "Siempre vinculado a deuda con Corte, Inquisición o Misterios."
+        - "Aplicar riesgos: tentaciones, penalizadores de Cordura, restricciones religiosas."
+
+    - id: "RAZA.PLAGA_SUPERVIVIENTE"
+      name: "Superviviente de la Plaga"
+      list: "GRIS"
+      playable_default: false
+      recommended_phases: ["CAMPANA.MID"]
+      houses_allowed: ["CASA.MISTERIOS", "CASA.COTIDIANO"]
+      requires_dj_approval: true
+      notes_ai:
+        - "Secuelas visibles o internas de la Peste Verde."
+        - "Buen ancla para Marcas de Plaga y zonas infectadas."
+
+    - id: "RAZA.TINTA_MARCADO"
+      name: "Humano Marcado por la Tinta"
+      list: "GRIS"
+      playable_default: false
+      recommended_phases: ["CAMPANA.MID", "CAMPANA.LATE"]
+      houses_allowed: ["CASA.MISTERIOS", "CASA.SOMBRAS"]
+      requires_dj_approval: true
+      notes_ai:
+        - "Siempre bajo vigilancia (Inquisición / Misterios)."
+        - "Debe tener Reloj de Peligro asociado."
+        - "Nunca tratar la Tinta como recurso gratuito o sin coste."
+
+  blacklist:
+    - id: "RAZA_PROHIBIDA.AVATAR_MARCA"
+      name: "Avatares de Marcas"
+      category: "PROHIBIDA"
+      examples:
+        - "Peste Verde encarnada"
+        - "Avatar de Tinta"
+        - "Espíritu del Sindicato"
+      rule_ai:
+        - "Nunca ofrecer como raza jugable estándar."
+        - "Solo usar como PNJ, amenazas o eventos de misión."
+
+    - id: "RAZA_PROHIBIDA.MONSTRUO_MAYOR"
+      name: "Monstruos Mayores"
+      category: "PROHIBIDA"
+      examples:
+        - "Demonios mayores"
+        - "Dragones"
+        - "Horrores del Templo Resonante"
+      rule_ai:
+        - "Reservar para jefes de misión y eventos legendarios."
+
+    - id: "RAZA_PROHIBIDA.NO_HUMANOIDE"
+      name: "No Humanoides Extremos"
+      category: "PROHIBIDA"
+      examples:
+        - "Slimes"
+        - "Masas de Tinta sin forma"
+        - "Enjambres insectoides inteligentes"
+        - "Cristales pensantes"
+      rule_ai:
+        - "Nunca ofrecer como PJ en campañas estándar."
+        - "Si el jugador lo pide, redirigir a razas de la whitelist/greylist."
+
+    - id: "RAZA_PROHIBIDA.ENTIDAD_MITICA"
+      name: "Entidades Míticas y Grandes Personajes"
+      category: "PROHIBIDA"
+      examples:
+        - "Kaelen"
+        - "Lolicia"
+        - "Verrus"
+        - "Iron"
+        - "Borin"
+        - "Sam"
+        - "Kantia"
+      rule_ai:
+        - "No permitir que el jugador tome control directo como PJ."
+        - "Solo usarlos como PNJ clave, patronos o objetivos de misión."
+
+noise_inhibitors:
+  - id: "INHIBIDOR.ENFOQUE_CAMPANA_MENU"
+    description: >
+      Evita que la IA convierta los modos A/B/C en un menú de 'enfoque de campaña'
+      (Guerra, Gestión, Misterio, Equilibrado) para el jugador.
+    forbidden_phrases:
+      - "Enfoque de campaña ¿Qué tipo de experiencia prefieres para empezar?"
+      - "A) Guerra y Táctica (Wargame, MODO C frecuente)."
+      - "B) Gestión y Política (Recursos, BL, Infamia)."
+      - "C) Misterio y Exploración (Lore, Tinta, Ruinas)."
+      - "D) Equilibrado (Recomendado por el sistema)."
+    replacement_policy:
+      - "Siempre usar MODO.A_ARQUITECTO como inicio de campaña."
+      - "Si el jugador habla de 'enfoque', interpretar solo tono (más política, más misterio, etc.) sin desactivar mecánicas."
+      - "Nunca presentar A/B/C/D como menú para desactivar reglas."
+
+  - id: "INHIBIDOR.RAZAS_RARAS"
+    description: >
+      Impide que la IA acepte razas jugables fuera del Protocolo de Razas Jugables.
+      Obliga a mapear cualquier propuesta de raza a las IDs válidas definidas en la
+      Hoja X (RAZA.HUMANO_ODYSEAM, RAZA.ENANO_MONTANA, RAZA.ELFO_EXILIO y la greylist),
+      y a rechazar encarnaciones de Marcas, monstruos mayores y entidades míticas
+      como opciones de PJ estándar.
+
+    whitelist_races:
+      - "RAZA.HUMANO_ODYSEAM"
+      - "RAZA.ENANO_MONTANA"
+      - "RAZA.ELFO_EXILIO"
+
+    greylist_races:
+      - "RAZA.ORCO_DESERTOR"
+      - "RAZA.LINAJE_TOCADO"
+      - "RAZA.PLAGA_SUPERVIVIENTE"
+      - "RAZA.TINTA_MARCADO"
+
+    blacklist_categories:
+      - "RAZA_PROHIBIDA.AVATAR_MARCA"
+      - "RAZA_PROHIBIDA.MONSTRUO_MAYOR"
+      - "RAZA_PROHIBIDA.NO_HUMANOIDE"
+      - "RAZA_PROHIBIDA.ENTIDAD_MITICA"
+
+    behavior_rules:
+      - "Si el jugador no indica raza, asignar por defecto RAZA.HUMANO_ODYSEAM."
+      - "Si el jugador pide una raza no listada en whitelist_races ni greylist_races,
+         el sistema NO debe aceptarla de inmediato."
+      - "Ante una raza rara o fuera de tono (demonio, dragón, slime, avatar de peste,
+         Kaelen, Lolicia, etc.), responder que no está disponible como PJ estándar y
+         ofrecer Humano, Enano o Elfo del Exilio como alternativas."
+      - "Solo se permitirá usar razas de greylist_races si el DJ o el propio usuario
+         ha declarado explícitamente que acepta razas condicionadas en esta campaña."
+      - "Nunca permitir que el jugador controle directamente entidades clasificadas
+         bajo blacklist_categories; solo pueden aparecer como PNJ o amenazas."
+
+    forbidden_phrases:
+      - "Quiero ser un dragón"
+      - "Puedo jugar como demonio"
+      - "Quiero ser la Peste Verde"
+      - "Quiero ser la Tinta"
+      - "Quiero ser Kaelen"
+      - "Quiero ser Lolicia"
+      - "Quiero ser Borin"
+      - "Quiero ser un slime"
+      - "Quiero ser una masa de tinta"
+      - "Quiero ser la plaga"
+
+    replacement_policy:
+      - "Si el jugador pide una raza de la Lista Negra (dragón, demonio, avatar de Marca,
+         grandes personajes, etc.), el sistema debe responder: 'Esa opción no está disponible
+         como PJ estándar en el Último Bastión. Puedes elegir Humano de Odyseam, Enano de
+         los Clanes de la Montaña o Elfo del Exilio.'"
+      - "Si el jugador describe una raza rara pero humanoide que podría mapearse a la greylist
+         (por ejemplo, orco arrepentido, superviviente de plaga, humano con sangre maldita),
+         el sistema puede proponer: 'Podemos ajustarlo a ORCO DESERTOR / SUPERVIVIENTE DE LA PLAGA /
+         LINAJE TOCADO, que son opciones especiales sujetas a aprobación del DJ.'"
+      - "Nunca crear razas nuevas sobre la marcha. Si el jugador quiere algo fuera de estas IDs,
+         el sistema debe negociar cómo ajustarlo a una raza existente o registrar la idea como
+         variante narrativa de una de las razas definidas, sin añadir nuevas entradas de raza."
+
+modes:
+  - id: "MODO.PREAMBULO"
+    name: "Modo Preámbulo"
+    trigger: 
+      - "IA_muestra_mision"
+    description: >
+      Fase donde se presentan misiones, Marcas, rumores o encargos. 
+      No hay combate. El jugador decide si acepta o no.
+    rules:
+      - "La IA debe presentar objetivo, CD, riesgos y recompensas."
+      - "Se debe indicar la Marca asociada si existe."
+      - "No se permite entrenamiento, descanso ni viaje."
+    transitions:
+      accept: "MODO.ENTRE_MISION"
+      reject: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.ENTRE_MISION"
+    name: "Modo Entre-Misión"
+    trigger:
+      - "jugador.acepta_mision"
+    description: >
+      Fase preparatoria donde el jugador se abastece y fija su enfoque.
+    rules:
+      - "No se permite entrenar ni dormir."
+      - "Registrar Relojes iniciales."
+      - "Apuntar recursos iniciales."
+    transitions:
+      begin_mission: "MODO.ESCARAMUZA"
+
+  - id: "MODO.DESCANSO"
+    name: "Modo Descanso"
+    description: >
+      Permite al PJ avanzar hasta 8 horas de tiempo en juego para recuperarse.
+    constraints:
+      - "Maximo 8 horas."
+      - "No se puede dormir hasta 10 horas después de un descanso."
+    effects:
+      - "Curación leve."
+      - "El Diario registra el tiempo exacto."
+    transitions:
+      finish: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.ENTRENAMIENTO"
+    name: "Modo Entrenamiento (Tiempo Real)"
+    trigger:
+      - "jugador.cierra_sesion_con_entrenamiento"
+    description: >
+      El PJ usa tiempo real para mejorar competencias.
+    rules:
+      - "Cada hora real = 1 punto de entrenamiento (mínimo 1)."
+      - "Solo 1 personaje puede entrenar por jugador."
+      - "No permite subir niveles de oficio directamente."
+    effects:
+      - "Bonos menores, afinidades, mejoras técnicas."
+    transitions:
+      next_session: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.DURMIENDO"
+    name: "Modo Durmiendo"
+    trigger:
+      - "jugador.cierra_sesion_sin_entrenar"
+    description: >
+      El PJ duerme 8 horas dentro del juego.
+    effects:
+      - "Fama doble durante las 10 primeras tiradas de la siguiente sesión."
+    transitions:
+      next_session: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.TIEMPO_LIBRE"
+    name: "Modo Tiempo Libre"
+    description: >
+      Vida cotidiana en el Bastión. Siempre incluye un Evento Cotidiano.
+    rules:
+      - "Generar SIEMPRE un evento cotidiano."
+      - "No se permite entrenar ni dormir."
+      - "No se permite iniciar viaje."
+    event_types:
+      - "conversacion_camara_central"
+      - "conocer_pnj"
+      - "intimar_relaciones"
+      - "apostar_jugar_dados"
+      - "obtener_rumor"
+      - "favor_menor"
+    transitions:
+      new_mission: "MODO.PREAMBULO"
+      rest: "MODO.DESCANSO"
+
+  - id: "MODO.ESCARAMUZA"
+    name: "Modo Escaramuza"
+    description: >
+      Combate reducido. Usa habilidades del oficio con cooldown.
+    rules:
+      - "1 accion ofensiva."
+      - "1 movimiento."
+      - "1 habilidad por turno (si cooldown lo permite)."
+    transitions:
+      escalate: "MODO.COMBATE_TACTICO"
+      end: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.COMBATE_TACTICO"
+    name: "Modo Combate Táctico"
+    description: >
+      Wargame completo. Solo disponible nivel 3 de oficio o superior.
+    constraints:
+      - "Requiere oficio nivel 3."
+    rules:
+      - "Fase de despliegue obligatoria."
+      - "Iniciativa por bandos."
+      - "Por turno: 2 movimientos, 2 ataques y 1 habilidad."
+      - "Tras 3 turnos sin usar habilidades → 2 habilidades en el mismo turno."
+    tracks:
+      - "reloj_batalla"
+      - "moral"
+      - "cooldowns"
+      - "control_terreno"
+    transitions:
+      victory: "MODO.TIEMPO_LIBRE"
+      defeat: "MODO.TIEMPO_LIBRE"
+
+  - id: "MODO.VIAJE"
+    name: "Modo Viaje"
+    description: >
+      El PJ se desplaza entre regiones. Debe cumplir un tiempo real mínimo por región
+      (10 minutos), ajustado según el método de transporte. Durante el viaje solo
+      puede socializar, contemplar, examinar el entorno o aceptar misiones secundarias.
+      El Pacto del Bastión exige no permanecer más de una semana fuera del Bastión.
+    triggers:
+      - "jugador.inicia_viaje"
+      - "salida_de_region"
+    constraints:
+      - "Minimo 10 minutos de tiempo real por región (salvo transporte especial)."
+      - "No se permite entrenamiento, descanso, combate tactico ni dormir."
+      - "El PJ no puede permanecer mas de 1 semana fuera del Bastion."
+    transport_modifiers:
+      transbordador_runico: "instantaneo"
+      montura_ligera: "5_minutos_por_region"
+      carro_carroza: "10_minutos_por_region"
+      marcha_a_pie: "10_15_minutos_por_region"
+      terreno_hostil: "+5_minutos_adicionales"
+    allowed_actions:
+      - "hablar_con_acompanantes"
+      - "observar_entorno"
+      - "detenerse_voluntariamente"
+      - "investigar_rastros"
+      - "aceptar_mision_secundaria"
+    forbidden_actions:
+      - "entrenar"
+      - "descansar"
+      - "dormir"
+      - "combate_tactico"
+    events:
+      - "rumores_regionales"
+      - "encuentro_menor"
+      - "paisaje_cambiante"
+      - "rastros_de_marcas"
+      - "mensajero"
+      - "desvio_voluntario"
+    pact_limit:
+      max_time_outside: "1_semana"
+      penalty_on_violation:
+        - "Aumentar Infamia"
+        - "Activar Reloj de Desercion"
+        - "Enviar patrulla de busqueda"
+    transitions:
+      arrive: "MODO.TIEMPO_LIBRE"
+      interrupt: "MODO.ESCARAMUZA"
+      special: "MODO.PREAMBULO"
+
+oficios:
+  # =========================================================
+  # ESCUELA DE LA GUERRA (LÍDERES MARCIALES)
+  # =========================================================
+  - id: "OFICIO.GUERRA.ASEDIADOR"
+    nombre: "El Asediador"
+    escuela: "GUERRA"
+    tipo: "batalla"
+    stats:
+      hp: 25
+      mov: 10
+      def: "d14"
+      rng: 1
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ASEDIADOR.DEFENSOR"
+        nombre: "Defensor"
+        pasiva:
+          nombre: "Defensor"
+          descripcion: "Gana +4 DEF mientras esté en Cobertura."
+        activa:
+          nombre: "Atrincherarse"
+          rango: "Personal"
+          area: "1 casilla (propia)"
+          efecto: "Crea cobertura ligera (+2 DEF) en su casilla hasta que se mueva."
+          cooldown_turnos: 1
+      B:
+        id: "SUBRAMA.ASEDIADOR.DEMOLEDOR"
+        nombre: "Demoledor"
+        pasiva:
+          nombre: "Demoledor"
+          descripcion: "Causa daño x2 a Estructuras y Máquinas."
+        activa:
+          nombre: "Carga Explosiva"
+          rango: 5
+          area: "1 casilla"
+          efecto: "Lanza una carga; causa 20 de daño a estructuras y elimina la Cobertura en la casilla."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ASEDIADOR.BOMBARDEO_MAESTRO"
+        nombre: "Bombardeo Maestro"
+        rango: "Global"
+        area: "3x3"
+        efecto: "Elige un punto del mapa; causa 100 de daño (2 fichas) en área 3x3 e ignora cobertura."
+        usos_por_batalla: 1
+      - id: "ULT.ASEDIADOR.FORTALEZA_VIVIENTE"
+        nombre: "Fortaleza Viviente"
+        rango: "Personal"
+        area: "Unidad del héroe"
+        efecto: "El héroe y su unidad son inmunes al daño durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ASEDIADOR.BRECHA"
+        nombre: "Brecha"
+        rango: 10
+        area: "1 sección de muralla"
+        efecto: "Destruye 1 sección de muralla; unidades encima sufren 50 de daño por caída."
+        usos_por_batalla: 1
+      - id: "ULT.ASEDIADOR.TIERRA_QUEMADA"
+        nombre: "Tierra Quemada"
+        rango: 20
+        area: "3x3"
+        efecto: "Zona en estado INCENDIO permanente, causando 1d6 bajas por turno a las unidades dentro."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.GUERRA.DUELISTA"
+    nombre: "El Duelista"
+    escuela: "GUERRA"
+    tipo: "batalla"
+    stats:
+      hp: 25
+      mov: 10
+      def: "d14"
+      rng: 1
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.DUELISTA.CAZA_HEROES"
+        nombre: "Caza-Héroes"
+        pasiva:
+          nombre: "Caza-Héroes"
+          descripcion: "+4 ATK al atacar a Héroes o Líderes."
+        activa:
+          nombre: "Estocada Precisa"
+          rango: "Melee"
+          area: "1 objetivo"
+          efecto: "Ataque cuerpo a cuerpo que ignora la DEF del objetivo; daño arma +1d8."
+          cooldown_turnos: 1
+      B:
+        id: "SUBRAMA.DUELISTA.INTOCABLE"
+        nombre: "Intocable"
+        pasiva:
+          nombre: "Intocable"
+          descripcion: "+2 MOV y +2 DEF."
+        activa:
+          nombre: "Paso de Finta"
+          rango: "Personal"
+          area: "Propio"
+          efecto: "Tras atacar, mueve 3 casillas sin ataques de oportunidad."
+          cooldown_turnos: 1
+    talentos_nivel5:
+      - id: "ULT.DUELISTA.DESAFIO"
+        nombre: "Desafío"
+        rango: 5
+        area: "General enemigo"
+        efecto: "El general enemigo debe atacar al Duelista o su ejército sufre -5 Moral."
+        usos_por_batalla: 1
+      - id: "ULT.DUELISTA.DANZA_DE_MUERTE"
+        nombre: "Danza de Muerte"
+        rango: "Adyacente"
+        area: "Todas las unidades enemigas adyacentes"
+        efecto: "Realiza 1 ataque contra cada unidad enemiga adyacente (hasta 8)."
+        usos_por_batalla: 1
+      - id: "ULT.DUELISTA.PARADA_PERFECTA"
+        nombre: "Parada Perfecta"
+        rango: "Reacción"
+        area: "Propio"
+        efecto: "Al ser golpeado, anula el daño y devuelve el 100% al atacante."
+        usos_por_batalla: 1
+      - id: "ULT.DUELISTA.DECAPITADOR"
+        nombre: "Decapitador"
+        rango: "Personal"
+        area: "Propio"
+        efecto: "Si mata una unidad este turno, recupera toda su HP y elimina estados negativos."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.GUERRA.VANGUARDISTA"
+    nombre: "El Vanguardista"
+    escuela: "GUERRA"
+    tipo: "batalla"
+    stats:
+      hp: 25
+      mov: 10
+      def: "d14"
+      rng: 1
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.VANGUARDISTA.INSPIRADOR"
+        nombre: "Inspirador"
+        pasiva:
+          nombre: "Inspirador"
+          descripcion: "Aliados a 5 casillas ganan +1 ATK."
+        activa:
+          nombre: "¡Avanzad!"
+          rango: "Adyacente"
+          area: "1 unidad aliada"
+          efecto: "Otorga una acción de movimiento extra a una unidad aliada adyacente."
+          cooldown_turnos: 1
+      B:
+        id: "SUBRAMA.VANGUARDISTA.TERROR"
+        nombre: "Terror"
+        pasiva:
+          nombre: "Terror"
+          descripcion: "Enemigos a 2 casillas tienen -1 DEF."
+        activa:
+          nombre: "Intimidar"
+          rango: 5
+          area: "1 unidad enemiga"
+          efecto: "La unidad tira Moral (CD 12); si falla, retrocede 3 casillas y pierde su turno."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.VANGUARDISTA.A_MI"
+        nombre: "¡A Mí!"
+        rango: "Global"
+        area: "Todo el ejército aliado"
+        efecto: "Todas las unidades aliadas en huida recuperan el control y se orientan hacia el héroe."
+        usos_por_batalla: 1
+      - id: "ULT.VANGUARDISTA.CARGA_FINAL"
+        nombre: "Carga Final"
+        rango: "Personal"
+        area: "Unidad del héroe"
+        efecto: "Duplica MOV y tira 2 dados de ATK eligiendo el mejor en este turno."
+        usos_por_batalla: 1
+      - id: "ULT.VANGUARDISTA.ESTANDARTE"
+        nombre: "Estandarte"
+        rango: "Aura 5"
+        area: "Aliados en aura"
+        efecto: "Los aliados en aura no pueden bajar de 1 HP durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.VANGUARDISTA.GRITO_DE_GUERRA"
+        nombre: "Grito de Guerra"
+        rango: "Aura 10"
+        area: "Enemigos en aura"
+        efecto: "Todos los enemigos en rango quedan ATURDIDOS (pierden su próximo turno)."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.GUERRA.CAZADOR_BESTIAS"
+    nombre: "Cazador de Bestias"
+    escuela: "GUERRA"
+    tipo: "batalla"
+    stats:
+      hp: 25
+      mov: 10
+      def: "d14"
+      rng: 1
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CAZADOR.MATAGIGANTES"
+        nombre: "Matagigantes"
+        pasiva:
+          nombre: "Matagigantes"
+          descripcion: "+20 de daño contra unidades tipo COLOSO."
+        activa:
+          nombre: "Tiro a las Piernas"
+          rango: 20
+          area: "1 Coloso enemigo"
+          efecto: "Reduce el MOV de un Coloso enemigo a 0 este turno."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.CAZADOR.RASTREADOR"
+        nombre: "Rastreador"
+        pasiva:
+          nombre: "Rastreador"
+          descripcion: "Ignora penalizadores de Terreno Difícil."
+        activa:
+          nombre: "Marca de Caza"
+          rango: 40
+          area: "1 unidad enemiga"
+          efecto: "Señala un enemigo; todos los aliados tienen Ventaja al atacarle."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.CAZADOR.TRAMPA_MAYOR"
+        nombre: "Trampa Mayor"
+        rango: "Contacto"
+        area: "1 Coloso enemigo"
+        efecto: "Inmoviliza permanentemente a un Coloso (salvo que sea liberado)."
+        usos_por_batalla: 1
+      - id: "ULT.CAZADOR.TIRO_AL_CORAZON"
+        nombre: "Tiro al Corazón"
+        rango: 40
+        area: "1 monstruo/coloso"
+        efecto: "Causa daño igual al 50% de la HP actual del objetivo."
+        usos_por_batalla: 1
+      - id: "ULT.CAZADOR.CAMUFLAJE_GLOBAL"
+        nombre: "Camuflaje Global"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Todo el ejército se vuelve Invisible hasta que ataque o termine el turno."
+        usos_por_batalla: 1
+      - id: "ULT.CAZADOR.COMPANERO"
+        nombre: "Compañero"
+        rango: "Adyacente"
+        area: "1 casilla"
+        efecto: "Invoca una Bestia de Asalto (50 HP, ATK d12) que actúa inmediatamente."
+        usos_por_batalla: 1
+
+  # =========================================================
+  # ESCUELA DE LA FORJA (INGENIEROS)
+  # =========================================================
+  - id: "OFICIO.FORJA.ARQUITECTO"
+    nombre: "El Arquitecto"
+    escuela: "FORJA"
+    tipo: "batalla"
+    stats:
+      hp: 20
+      mov: 8
+      def: "d12"
+      rng: 15
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ARQ.CONSTRUCTOR"
+        nombre: "Constructor"
+        pasiva:
+          nombre: "Constructor"
+          descripcion: "Repara 20 HP por turno a edificios o máquinas adyacentes."
+        activa:
+          nombre: "Levantar Muro"
+          rango: 5
+          area: "1 casilla"
+          efecto: "Crea un muro de piedra (Cobertura Pesada, 20 HP)."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.ARQ.FORTIFICADOR"
+        nombre: "Fortificador"
+        pasiva:
+          nombre: "Fortificador"
+          descripcion: "Unidades adyacentes ganan +2 DEF."
+        activa:
+          nombre: "Suelo Reforzado"
+          rango: "Contacto"
+          area: "1 unidad aliada"
+          efecto: "La unidad es inmune a Derribos, Empujes y Terreno Difícil durante 1 turno."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ARQ.MURO_INSTANTANEO"
+        nombre: "Muro Instantáneo"
+        rango: 10
+        area: "Línea de 3 casillas"
+        efecto: "Crea 3 casillas de Muralla de Hierro indestructible durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ARQ.BUNKER"
+        nombre: "Búnker"
+        rango: "Personal"
+        area: "Unidad del héroe"
+        efecto: "+10 DEF y inmune al daño de área durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ARQ.PUENTE"
+        nombre: "Puente"
+        rango: 5
+        area: "1 línea"
+        efecto: "Crea un puente sobre agua/abismo para hasta 10 unidades."
+        usos_por_batalla: 1
+      - id: "ULT.ARQ.DERRUMBE"
+        nombre: "Derrumbe"
+        rango: 20
+        area: "1 casilla"
+        efecto: "Convierte la casilla enemiga en un agujero; la unidad sufre 50 de daño y queda atrapada."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.FORJA.MINERO_PROFUNDO"
+    nombre: "Minero Profundo"
+    escuela: "FORJA"
+    tipo: "batalla"
+    stats:
+      hp: 20
+      mov: 8
+      def: "d12"
+      rng: 15
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.MINERO.ZAPADOR"
+        nombre: "Zapador"
+        pasiva:
+          nombre: "Zapador"
+          descripcion: "Destruye coberturas enemigas automáticamente al contacto."
+        activa:
+          nombre: "Carga Demolición"
+          rango: "Contacto"
+          area: "1 estructura"
+          efecto: "Causa 40 de daño a una estructura adyacente."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.MINERO.TOPO"
+        nombre: "Topo"
+        pasiva:
+          nombre: "Topo"
+          descripcion: "Puede moverse a través de muros y enemigos."
+        activa:
+          nombre: "Aparición"
+          rango: 5
+          area: "Propio"
+          efecto: "Se teletransporta 5 casillas a suelo visible."
+          cooldown_turnos: 1
+    talentos_nivel5:
+      - id: "ULT.MINERO.TERREMOTO"
+        nombre: "Terremoto"
+        rango: 30
+        area: "5x5"
+        efecto: "Todas las unidades sufren 20 de daño y caen DERRIBADAS."
+        usos_por_batalla: 1
+      - id: "ULT.MINERO.VETA_EXPLOSIVA"
+        nombre: "Veta Explosiva"
+        rango: "Trampa"
+        area: "1 casilla"
+        efecto: "Mina; al pisarla, 100 de daño en área 1 casilla."
+        usos_por_batalla: 1
+      - id: "ULT.MINERO.TUNEL_ATAQUE"
+        nombre: "Túnel de Ataque"
+        rango: "Global"
+        area: "1 unidad aliada de infantería"
+        efecto: "La teletransporta a cualquier punto del mapa."
+        usos_por_batalla: 1
+      - id: "ULT.MINERO.PIEL_DE_PIEDRA"
+        nombre: "Piel de Piedra"
+        rango: 10
+        area: "3 unidades aliadas"
+        efecto: "Mitad de daño físico recibido durante 1 turno."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.FORJA.ARTIFICIERO"
+    nombre: "El Artificiero"
+    escuela: "FORJA"
+    tipo: "batalla"
+    stats:
+      hp: 20
+      mov: 8
+      def: "d12"
+      rng: 15
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ARTIFICIERO.MECANICO"
+        nombre: "Mecánico"
+        pasiva:
+          nombre: "Mecánico"
+          descripcion: "Cura 10 HP por turno a máquinas adyacentes."
+        activa:
+          nombre: "Reparación"
+          rango: "Contacto"
+          area: "1 máquina aliada"
+          efecto: "Resucita una máquina destruida con 1 HP para un último disparo."
+          cooldown_turnos: 3
+      B:
+        id: "SUBRAMA.ARTIFICIERO.ARTILLERO"
+        nombre: "Artillero"
+        pasiva:
+          nombre: "Artillero"
+          descripcion: "Máquinas de asedio adyacentes tiran +1 dado de ATK."
+        activa:
+          nombre: "Munición Mejorada"
+          rango: "Contacto"
+          area: "1 máquina aliada"
+          efecto: "La máquina ignora DEF este turno."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ARTIFICIERO.SOBRECARGA"
+        nombre: "Sobrecarga"
+        rango: "Global"
+        area: "Todas las máquinas aliadas"
+        efecto: "Disparan 2 veces este turno; cada una sufre 10 de daño."
+        usos_por_batalla: 1
+      - id: "ULT.ARTIFICIERO.CAMPO_ESTASIS"
+        nombre: "Campo de Estasis"
+        rango: 20
+        area: "3x3"
+        efecto: "Unidades dentro no pueden mover, atacar ni recibir daño durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ARTIFICIERO.AUTODESTRUCCION"
+        nombre: "Autodestrucción"
+        rango: "Contacto"
+        area: "2x2"
+        efecto: "Sacrifica una máquina aliada; causa 150 de daño en 2x2."
+        usos_por_batalla: 1
+      - id: "ULT.ARTIFICIERO.EXOESQUELETO"
+        nombre: "Exoesqueleto"
+        rango: "Personal"
+        area: "Héroe"
+        efecto: "+100 HP y ATK d20 durante 3 turnos."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.FORJA.CRISTALERO"
+    nombre: "El Cristalero"
+    escuela: "FORJA"
+    tipo: "batalla"
+    stats:
+      hp: 20
+      mov: 8
+      def: "d12"
+      rng: 15
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CRISTALERO.BATERIA"
+        nombre: "Batería"
+        pasiva:
+          nombre: "Batería de Enlace"
+          descripcion: "Una vez por turno, puede reducir en 1 el cooldown de una habilidad de un mago aliado en Aura 5."
+        activa:
+          nombre: "Transferencia"
+          rango: 10
+          area: "1 mago aliado"
+          efecto: "Cede su acción estándar; el mago puede usar una habilidad adicional este turno."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.CRISTALERO.LASER"
+        nombre: "Láser"
+        pasiva:
+          nombre: "Láser"
+          descripcion: "Sus ataques a distancia ignoran 2 puntos de Armadura."
+        activa:
+          nombre: "Rayo Concentrado"
+          rango: 40
+          area: "Línea"
+          efecto: "Causa 20 de daño a todas las unidades en la línea."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.CRISTALERO.RAYO_ORBITAL"
+        nombre: "Rayo Orbital"
+        rango: "Global"
+        area: "1 casilla"
+        efecto: "Causa 150 de daño en el punto de impacto."
+        usos_por_batalla: 1
+      - id: "ULT.CRISTALERO.ESCUDO_PRISMA"
+        nombre: "Escudo Prisma"
+        rango: "Aura 10"
+        area: "Aliados en aura"
+        efecto: "Todos los proyectiles dirigidos al aura se reflejan al atacante."
+        usos_por_batalla: 1
+      - id: "ULT.CRISTALERO.RESONANCIA"
+        nombre: "Resonancia"
+        rango: 30
+        area: "Armas mágicas enemigas en rango"
+        efecto: "Destruye todos los bonos mágicos de las armas enemigas en el área."
+        usos_por_batalla: 1
+      - id: "ULT.CRISTALERO.FLASH"
+        nombre: "Flash"
+        rango: "Global"
+        area: "Ejército enemigo"
+        efecto: "Todas las unidades enemigas quedan cegadas (-4 ATK) durante 1 turno."
+        usos_por_batalla: 1
+
+  # =========================================================
+  # ESCUELA DE LAS SOMBRAS (SUBTERFUGIO)
+  # =========================================================
+  - id: "OFICIO.SOMBRAS.MAESTRO_ESPIAS"
+    nombre: "Maestro de Espías"
+    escuela: "SOMBRAS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 14
+      def: "d10"
+      rng: "1 / 20"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ESPIAS.FANTASMA"
+        nombre: "Fantasma"
+        pasiva:
+          nombre: "Fantasma"
+          descripcion: "Invisible (no puede ser objetivo) mientras no ataque."
+        activa:
+          nombre: "Desvanecerse"
+          rango: "Personal"
+          area: "Propio"
+          efecto: "Se vuelve Invisible inmediatamente después de atacar."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.ESPIAS.OJO"
+        nombre: "Ojo"
+        pasiva:
+          nombre: "Ojo"
+          descripcion: "Conoce HP y stats exactos de cualquier enemigo."
+        activa:
+          nombre: "Señalar Debilidad"
+          rango: 30
+          area: "1 enemigo"
+          efecto: "El próximo ataque contra ese objetivo es crítico automático."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ESPIAS.ASESINATO"
+        nombre: "Asesinato"
+        rango: 5
+        area: "General enemigo"
+        efecto: "Si llega al general enemigo, le causa 100 de daño."
+        usos_por_batalla: 1
+      - id: "ULT.ESPIAS.SABOTAJE"
+        nombre: "Sabotaje"
+        rango: "Global"
+        area: "Máquinas enemigas"
+        efecto: "Todas las máquinas enemigas quedan inutilizadas 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ESPIAS.FALSA_ORDEN"
+        nombre: "Falsa Orden"
+        rango: 40
+        area: "1 unidad enemiga"
+        efecto: "Mueve una unidad enemiga su MOV máximo en la dirección que quieras."
+        usos_por_batalla: 1
+      - id: "ULT.ESPIAS.ROBO_PLANOS"
+        nombre: "Robo de Planos"
+        rango: "Global"
+        area: "Ejército enemigo"
+        efecto: "El enemigo pierde todos los bonificadores de defensa por terreno."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.SOMBRAS.CONTRABANDISTA"
+    nombre: "Contrabandista"
+    escuela: "SOMBRAS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 14
+      def: "d10"
+      rng: "1 / 20"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CONTRABANDISTA.LOGISTICO"
+        nombre: "Logístico"
+        pasiva:
+          nombre: "Logístico"
+          descripcion: "Su ejército ignora penalizadores por falta de suministros."
+        activa:
+          nombre: "Botiquín Ilegal"
+          rango: "Contacto"
+          area: "1 unidad aliada"
+          efecto: "Cura 20 HP a una unidad adyacente."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.CONTRABANDISTA.ESCURRIDIZO"
+        nombre: "Escurridizo"
+        pasiva:
+          nombre: "Escurridizo"
+          descripcion: "Puede moverse a través de casillas ocupadas por enemigos."
+        activa:
+          nombre: "Ruta Oculta"
+          rango: 5
+          area: "1 unidad aliada"
+          efecto: "Teletransporta una unidad aliada 5 casillas."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.CONTRABANDISTA.RUTA_SECRETA"
+        nombre: "Ruta Secreta"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Todas las unidades aliadas ganan +5 MOV este turno."
+        usos_por_batalla: 1
+      - id: "ULT.CONTRABANDISTA.SOBORNO_MASIVO"
+        nombre: "Soborno Masivo"
+        rango: 10
+        area: "1 unidad mercenaria enemiga"
+        efecto: "Esa unidad pasa a tu control permanentemente."
+        usos_por_batalla: 1
+      - id: "ULT.CONTRABANDISTA.SUMINISTRO_EXTRA"
+        nombre: "Suministro Extra"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Todas las unidades aliadas recuperan el 50% de su HP perdida."
+        usos_por_batalla: 1
+      - id: "ULT.CONTRABANDISTA.CORTINA_HUMO"
+        nombre: "Cortina de Humo"
+        rango: "Global"
+        area: "Mapa completo"
+        efecto: "Todo el mapa se cubre de niebla; visión máxima 1 casilla."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.SOMBRAS.INQUISIDOR"
+    nombre: "El Inquisidor"
+    escuela: "SOMBRAS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 14
+      def: "d10"
+      rng: "1 / 20"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.INQ.CAZA_MAGOS"
+        nombre: "Caza-Magos"
+        pasiva:
+          nombre: "Caza-Magos"
+          descripcion: "+4 ATK y +4 DEF contra unidades con Magia."
+        activa:
+          nombre: "Silencio"
+          rango: 20
+          area: "1 unidad enemiga"
+          efecto: "La unidad no puede usar hechizos este turno."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.INQ.TERROR"
+        nombre: "Terror"
+        pasiva:
+          nombre: "Terror"
+          descripcion: "Enemigos en contacto deben tirar Moral o sufren -2 ATK."
+        activa:
+          nombre: "Interrogatorio"
+          rango: 1
+          area: "1 enemigo adyacente"
+          efecto: "Aturde al enemigo; pierde su turno completo."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.INQ.PURGA"
+        nombre: "Purga"
+        rango: 20
+        area: "Unidades Invocadas/No Muertas en rango"
+        efecto: "Elimina automáticamente a todas las unidades Invocadas o No Muertas en rango."
+        usos_por_batalla: 1
+      - id: "ULT.INQ.JUICIO_FINAL"
+        nombre: "Juicio Final"
+        rango: 10
+        area: "1 unidad enemiga"
+        efecto: "La unidad tira Moral (CD 18); si falla, muere instantáneamente."
+        usos_por_batalla: 1
+      - id: "ULT.INQ.ZONA_VERDAD"
+        nombre: "Zona de Verdad"
+        rango: "Global"
+        area: "Mapa completo"
+        efecto: "Elimina Invisibilidad, Camuflaje e Ilusiones en todo el mapa."
+        usos_por_batalla: 1
+      - id: "ULT.INQ.FANATISMO"
+        nombre: "Fanatismo"
+        rango: "Aura 10"
+        area: "Aliados en aura"
+        efecto: "Las unidades aliadas no pueden bajar de 1 HP este turno."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.SOMBRAS.SABOTEADOR"
+    nombre: "El Saboteador"
+    escuela: "SOMBRAS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 14
+      def: "d10"
+      rng: "1 / 20"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.SABOTEADOR.TRAMPERO"
+        nombre: "Trampero"
+        pasiva:
+          nombre: "Trampero"
+          descripcion: "No activa trampas enemigas."
+        activa:
+          nombre: "Colocar Mina"
+          rango: "Adyacente"
+          area: "1 casilla"
+          efecto: "Coloca una trampa invisible (50 daño) en una casilla adyacente."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.SABOTEADOR.VENENOSO"
+        nombre: "Venenoso"
+        pasiva:
+          nombre: "Venenoso"
+          descripcion: "Sus ataques melee aplican estado VENENO."
+        activa:
+          nombre: "Bomba de Gas"
+          rango: 15
+          area: "3x3"
+          efecto: "Crea nube de gas que causa daño y -ATK a las unidades dentro."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.SABOTEADOR.REACCION_CADENA"
+        nombre: "Reacción en Cadena"
+        rango: "Global"
+        area: "1 unidad de artillería/rango enemiga y adyacentes"
+        efecto: "Esa unidad explota; 50 daño a ella y adyacentes."
+        usos_por_batalla: 1
+      - id: "ULT.SABOTEADOR.GAS_MOSTAZA"
+        nombre: "Gas Mostaza"
+        rango: 30
+        area: "5x5"
+        efecto: "Zona de nube tóxica; 20 daño/turno a quien esté dentro."
+        usos_por_batalla: 1
+      - id: "ULT.SABOTEADOR.COLAPSO"
+        nombre: "Colapso"
+        rango: 40
+        area: "1 estructura"
+        efecto: "Destruye un edificio, puente o torre de vigilancia."
+        usos_por_batalla: 1
+      - id: "ULT.SABOTEADOR.VIRUS_MAGICO"
+        nombre: "Virus Mágico"
+        rango: "Reacción"
+        area: "1 lanzador enemigo"
+        efecto: "Si lanza un hechizo, sufre 50 daño por retroalimentación."
+        usos_por_batalla: 1
+
+  # =========================================================
+  # ESCUELA DE LA CORTE (LIDERAZGO POLÍTICO)
+  # =========================================================
+  - id: "OFICIO.CORTE.MERCADER"
+    nombre: "Mercader Príncipe"
+    escuela: "CORTE"
+    tipo: "batalla"
+    stats:
+      hp: 10
+      mov: 6
+      def: "d8"
+      rng: "Global"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.MERCADER.PAGADOR"
+        nombre: "Pagador"
+        pasiva:
+          nombre: "Pagador"
+          descripcion: "+2 Moral a unidades Mercenarias aliadas."
+        activa:
+          nombre: "Pago por Adelantado"
+          rango: 20
+          area: "1 unidad aliada"
+          efecto: "Cura 1d20 HP (poción de calidad)."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.MERCADER.PROVEEDOR"
+        nombre: "Proveedor"
+        pasiva:
+          nombre: "Proveedor"
+          descripcion: "Todas las unidades aliadas recuperan 5 HP al inicio del turno."
+        activa:
+          nombre: "Mejor Equipo"
+          rango: 20
+          area: "1 unidad aliada"
+          efecto: "Gana +1 ATK durante 1 turno."
+          cooldown_turnos: 1
+    talentos_nivel5:
+      - id: "ULT.MERCADER.COMPRA_HOSTIL"
+        nombre: "Compra Hostil"
+        rango: 20
+        area: "1 unidad enemiga (no líder)"
+        efecto: "Pagando recursos de campaña, esa unidad se une a ti."
+        usos_por_batalla: 1
+      - id: "ULT.MERCADER.EMBARGO"
+        nombre: "Embargo"
+        rango: "Global"
+        area: "Ejército enemigo"
+        efecto: "El enemigo no puede usar habilidades activas ni objetos este turno."
+        usos_por_batalla: 1
+      - id: "ULT.MERCADER.SEGURO_VIDA"
+        nombre: "Seguro de Vida"
+        rango: "Personal"
+        area: "Héroe"
+        efecto: "Si muere, otorga 10 VP inmediatamente."
+        usos_por_batalla: 1
+      - id: "ULT.MERCADER.LLUVIA_MONEDAS"
+        nombre: "Lluvia de Monedas"
+        rango: "Aura 10"
+        area: "Enemigos en aura"
+        efecto: "Los enemigos pierden su turno recogiendo oro (Aturdidos)."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.CORTE.DEMAGOGO"
+    nombre: "El Demagogo"
+    escuela: "CORTE"
+    tipo: "batalla"
+    stats:
+      hp: 10
+      mov: 6
+      def: "d8"
+      rng: "Global"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.DEMAGOGO.AGITADOR"
+        nombre: "Agitador"
+        pasiva:
+          nombre: "Agitador"
+          descripcion: "Unidades de Tier 1 ganan +2 ATK."
+        activa:
+          nombre: "Provocar"
+          rango: 20
+          area: "1 unidad enemiga"
+          efecto: "Obliga a la unidad enemiga a cargar contra la más cercana."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.DEMAGOGO.MARTIR"
+        nombre: "Mártir"
+        pasiva:
+          nombre: "Mártir"
+          descripcion: "Si el héroe muere, todas las tropas aliadas ganan +4 ATK permanente."
+        activa:
+          nombre: "Escudo Humano"
+          rango: "Contacto"
+          area: "1 unidad aliada"
+          efecto: "Redirige el daño recibido por el héroe a esa unidad."
+          cooldown_turnos: 1
+    talentos_nivel5:
+      - id: "ULT.DEMAGOGO.REVOLUCION"
+        nombre: "Revolución"
+        rango: 20
+        area: "1 unidad de infantería básica enemiga"
+        efecto: "Esa unidad pasa a tu control."
+        usos_por_batalla: 1
+      - id: "ULT.DEMAGOGO.MAREA_HUMANA"
+        nombre: "Marea Humana"
+        rango: "Bordes"
+        area: "2 fichas de colonos"
+        efecto: "Invoca 2 fichas de colonos (100 HP) en los bordes del mapa."
+        usos_por_batalla: 1
+      - id: "ULT.DEMAGOGO.FANATISMO"
+        nombre: "Fanatismo Global"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Inmunes a Miedo, Moral y Dolor (no pierden DEF) este turno."
+        usos_por_batalla: 1
+      - id: "ULT.DEMAGOGO.VOZ_DIOS"
+        nombre: "Voz de Dios"
+        rango: "Global"
+        area: "Jugador enemigo"
+        efecto: "El jugador enemigo pierde su turno completo."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.CORTE.CONSEJERO_REAL"
+    nombre: "Consejero Real"
+    escuela: "CORTE"
+    tipo: "batalla"
+    stats:
+      hp: 10
+      mov: 6
+      def: "d8"
+      rng: "Global"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CONSEJERO.ESTRATEGA"
+        nombre: "Estratega"
+        pasiva:
+          nombre: "Estratega"
+          descripcion: "+5 a la tirada de Iniciativa del ejército."
+        activa:
+          nombre: "Orden Directa"
+          rango: "Global"
+          area: "1 unidad aliada"
+          efecto: "Repite una tirada de ataque fallida."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.CONSEJERO.DIPLOMATICO"
+        nombre: "Diplomático"
+        pasiva:
+          nombre: "Diplomático"
+          descripcion: "No puede ser atacado hasta que él ataque primero."
+        activa:
+          nombre: "Alto el Fuego"
+          rango: 20
+          area: "1 unidad enemiga"
+          efecto: "Esa unidad no puede atacar este turno."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.CONSEJERO.TREGUA_FORZADA"
+        nombre: "Tregua Forzada"
+        rango: "Global"
+        area: "Todas las unidades"
+        efecto: "Ninguna unidad (aliada o enemiga) puede atacar durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.CONSEJERO.ALIANZA"
+        nombre: "Alianza"
+        rango: "Borde del mapa"
+        area: "4 fichas de aliados"
+        efecto: "Invoca 4 fichas de aliados (200 HP) por un flanco."
+        usos_por_batalla: 1
+      - id: "ULT.CONSEJERO.TRAICION"
+        nombre: "Traición"
+        rango: 40
+        area: "General enemigo"
+        efecto: "El general enemigo recibe 50 de daño por apuñalamiento interno."
+        usos_por_batalla: 1
+      - id: "ULT.CONSEJERO.DECRETO_REAL"
+        nombre: "Decreto Real"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "+4 DEF a todo tu ejército durante 1 turno."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.CORTE.LEGISLADOR"
+    nombre: "El Legislador"
+    escuela: "CORTE"
+    tipo: "batalla"
+    stats:
+      hp: 10
+      mov: 6
+      def: "d8"
+      rng: "Global"
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.LEGISLADOR.JUEZ"
+        nombre: "Juez"
+        pasiva:
+          nombre: "Juez"
+          descripcion: "Enemigos a 10 casillas tienen -1 ATK."
+        activa:
+          nombre: "Veto"
+          rango: "Reacción"
+          area: "1 habilidad enemiga"
+          efecto: "Cancela una habilidad activa que el enemigo acaba de usar."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.LEGISLADOR.NOTARIO"
+        nombre: "Notario"
+        pasiva:
+          nombre: "Notario de Hierro"
+          descripcion: "Inmune a robo, soborno y trucos de Contrabandistas."
+        activa:
+          nombre: "Orden de Protección"
+          rango: 20
+          area: "1 unidad"
+          efecto: "Otorga 20 HP de escudo temporal."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.LEGISLADOR.ILEGALIZAR_MAGIA"
+        nombre: "Ilegalizar Magia"
+        rango: "Global"
+        area: "Todos los lanzadores"
+        efecto: "Durante 2 turnos, usar magia causa 20 de daño al lanzador."
+        usos_por_batalla: 1
+      - id: "ULT.LEGISLADOR.ORDEN_ARRESTO"
+        nombre: "Orden de Arresto"
+        rango: 30
+        area: "1 unidad enemiga"
+        efecto: "Queda congelada/prisionera hasta que el Legislador muera."
+        usos_por_batalla: 1
+      - id: "ULT.LEGISLADOR.EXPROPIACION"
+        nombre: "Expropiación"
+        rango: 20
+        area: "1 unidad enemiga y 1 aliada"
+        efecto: "Roba todos los bufos de una unidad enemiga y se los da a una aliada."
+        usos_por_batalla: 1
+      - id: "ULT.LEGISLADOR.LEY_MARCIAL"
+        nombre: "Ley Marcial"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Supera automáticamente cualquier chequeo de Moral este turno."
+        usos_por_batalla: 1
+
+  # =========================================================
+  # ESCUELA DE LOS MISTERIOS (MAGIA DE BATALLA)
+  # =========================================================
+  - id: "OFICIO.MISTERIOS.CIRUJANO_GUERRA"
+    nombre: "Cirujano de Guerra"
+    escuela: "MISTERIOS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 8
+      def: "d10"
+      rng: 40
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CIRUJANO.MEDICO"
+        nombre: "Médico"
+        pasiva:
+          nombre: "Médico"
+          descripcion: "Cura 5 HP por turno a unidades adyacentes."
+        activa:
+          nombre: "Cirugía"
+          rango: "Contacto"
+          area: "1 unidad aliada"
+          efecto: "Restaura el 50% de la HP de la unidad."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.CIRUJANO.FORENSE"
+        nombre: "Forense"
+        pasiva:
+          nombre: "Forense"
+          descripcion: "+1 crítico contra enemigos vivos."
+        activa:
+          nombre: "Explosión de Cadáver"
+          rango: 15
+          area: "3x3 alrededor del cadáver"
+          efecto: "Detona un cuerpo causando 20 de daño en área."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.CIRUJANO.RESURRECCION"
+        nombre: "Resurrección"
+        rango: "Aura 10"
+        area: "Unidades destruidas en aura"
+        efecto: "Todas las unidades destruidas reviven con 50 HP."
+        usos_por_batalla: 1
+      - id: "ULT.CIRUJANO.PANACEA"
+        nombre: "Panacea"
+        rango: "Global"
+        area: "Aliados"
+        efecto: "Elimina todos los estados alterados de los aliados."
+        usos_por_batalla: 1
+      - id: "ULT.CIRUJANO.GOLEM_CADAVER"
+        nombre: "Gólem de Cadáver"
+        rango: "Invocación"
+        area: "1 Coloso de Carne"
+        efecto: "Crea un coloso de 200 HP usando los muertos de la batalla."
+        usos_por_batalla: 1
+      - id: "ULT.CIRUJANO.NUBE_PESTE"
+        nombre: "Nube de Peste"
+        rango: 30
+        area: "5x5"
+        efecto: "Aplica Peste y causa 20 daño inicial."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.MISTERIOS.CAMINANTE_VACIO"
+    nombre: "Caminante del Vacío"
+    escuela: "MISTERIOS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 8
+      def: "d10"
+      rng: 40
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.VACIO.TELEPORTADOR"
+        nombre: "Teleportador"
+        pasiva:
+          nombre: "Teleportador"
+          descripcion: "Puede atravesar muros y obstáculos al mover."
+        activa:
+          nombre: "Transposición"
+          rango: 20
+          area: "1 unidad (aliada o enemiga)"
+          efecto: "Intercambia posición con esa unidad."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.VACIO.DIMENSIONAL"
+        nombre: "Dimensional"
+        pasiva:
+          nombre: "Dimensional"
+          descripcion: "50% de evasión contra ataques físicos."
+        activa:
+          nombre: "Muro de Fuerza"
+          rango: 10
+          area: "Línea de 5 casillas"
+          efecto: "Crea una línea impasable."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.VACIO.PORTAL_EJERCITO"
+        nombre: "Portal de Ejército"
+        rango: "Global"
+        area: "Hasta 3 unidades aliadas"
+        efecto: "Teletransporta 3 unidades aliadas a cualquier punto."
+        usos_por_batalla: 1
+      - id: "ULT.VACIO.AGUJERO_NEGRO"
+        nombre: "Agujero Negro"
+        rango: 30
+        area: "5x5"
+        efecto: "Atrae a los enemigos al centro y causa 40 de daño."
+        usos_por_batalla: 1
+      - id: "ULT.VACIO.DESTIERRO"
+        nombre: "Destierro"
+        rango: 20
+        area: "1 unidad enemiga (no Coloso)"
+        efecto: "Elimina la unidad de la batalla permanentemente."
+        usos_por_batalla: 1
+      - id: "ULT.VACIO.ZONA_CERO"
+        nombre: "Zona Cero"
+        rango: "Global"
+        area: "Ambos ejércitos"
+        efecto: "Intercambia la posición de despliegue de ambos ejércitos."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.MISTERIOS.ALQUIMISTA_TINTA"
+    nombre: "Alquimista de Tinta"
+    escuela: "MISTERIOS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 8
+      def: "d10"
+      rng: 40
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ALQUIMISTA.CORRUPTOR"
+        nombre: "Corruptor"
+        pasiva:
+          nombre: "Corruptor"
+          descripcion: "Ataques melee aplican Corrupción (-1 dado)."
+        activa:
+          nombre: "Charco Ácido"
+          rango: 10
+          area: "3x3"
+          efecto: "Zona que causa 10 de daño al pisar."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.ALQUIMISTA.PURIFICADOR"
+        nombre: "Purificador"
+        pasiva:
+          nombre: "Purificador"
+          descripcion: "Aliados cercanos son inmunes a efectos de Tinta."
+        activa:
+          nombre: "Limpiar"
+          rango: 20
+          area: "Terreno"
+          efecto: "Elimina un efecto de terreno enemigo (fuego, tinta, gas)."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ALQUIMISTA.OLA_TINTA"
+        nombre: "Ola de Tinta"
+        rango: 20
+        area: "6x6"
+        efecto: "Terreno difícil; causa 20 de daño por turno."
+        usos_por_batalla: 1
+      - id: "ULT.ALQUIMISTA.TRANSMUTACION"
+        nombre: "Transmutación"
+        rango: 10
+        area: "1 unidad enemiga"
+        efecto: "Su armadura pasa a DEF 0."
+        usos_por_batalla: 1
+      - id: "ULT.ALQUIMISTA.HOMUNCULO"
+        nombre: "Homúnculo"
+        rango: "Invocación"
+        area: "1 copia de un Coloso enemigo"
+        efecto: "Crea una copia de un Coloso enemigo durante 3 turnos."
+        usos_por_batalla: 1
+      - id: "ULT.ALQUIMISTA.PIEDRA_FILOSOFAL"
+        nombre: "Piedra Filosofal"
+        rango: "Global"
+        area: "Ejército aliado"
+        efecto: "Cura el 100% HP a todo el ejército y otorga +1 ATK."
+        usos_por_batalla: 1
+
+  - id: "OFICIO.MISTERIOS.ARQUEOLOGO"
+    nombre: "El Arqueólogo"
+    escuela: "MISTERIOS"
+    tipo: "batalla"
+    stats:
+      hp: 15
+      mov: 8
+      def: "d10"
+      rng: 40
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ARQUEOLOGO.TECNOPATA"
+        nombre: "Tecnópata"
+        pasiva:
+          nombre: "Tecnópata"
+          descripcion: "+2 ATK/DEF a máquinas aliadas cercanas."
+        activa:
+          nombre: "Sobrecarga Rúnica"
+          rango: 30
+          area: "1 máquina enemiga"
+          efecto: "Aturde a una máquina enemiga; pierde su turno."
+          cooldown_turnos: 2
+      B:
+        id: "SUBRAMA.ARQUEOLOGO.ERUDITO"
+        nombre: "Erudito"
+        pasiva:
+          nombre: "Erudito"
+          descripcion: "Todo el ejército tiene +1 probabilidad de crítico."
+        activa:
+          nombre: "Activar Trampa Antigua"
+          rango: "Global"
+          area: "Enemigos en ruinas/edificios"
+          efecto: "Causa 20 daño a enemigos en ruinas/edificios."
+          cooldown_turnos: 2
+    talentos_nivel5:
+      - id: "ULT.ARQUEOLOGO.DESPERTAR_RUINA"
+        nombre: "Despertar Ruina"
+        rango: "Global"
+        area: "3 Ruinas Vivas"
+        efecto: "Invoca 3 fichas de Ruinas Vivas (150 HP) en el mapa."
+        usos_por_batalla: 1
+      - id: "ULT.ARQUEOLOGO.HACKEO_RUNICO"
+        nombre: "Hackeo Rúnico"
+        rango: "Global"
+        area: "Máquinas/autómatas enemigos"
+        efecto: "Toma control de todas las máquinas enemigas durante 1 turno."
+        usos_por_batalla: 1
+      - id: "ULT.ARQUEOLOGO.RELIQUIA_ANTIGUA"
+        nombre: "Reliquia Antigua"
+        rango: 60
+        area: "1 casilla"
+        efecto: "Dispara un rayo orbital que causa 150 daño en el punto."
+        usos_por_batalla: 1
+      - id: "ULT.ARQUEOLOGO.GLIFO_PROTECCION"
+        nombre: "Glifo de Protección"
+        rango: "Aura 10"
+        area: "Aliados en aura"
+        efecto: "Se vuelven invulnerables al daño durante 1 turno."
+        usos_por_batalla: 1
+
+  # =========================================================
+  # ESCUELA DEL COTIDIANO (11 OFICIOS – ORIENTADOS A CAMPAÑA)
+  # No tienen stats de batalla definidos en esta hoja.
+  # =========================================================
+  - id: "OFICIO.COTIDIANO.PROVEEDOR"
+    nombre: "El Proveedor"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.PROVEEDOR.LOGISTICA_PERFECTA"
+        nombre: "Logística Perfecta"
+        pasiva:
+          nombre: "Logística Perfecta"
+          descripcion: "Ignora penalizadores de carga y distancia en suministros."
+        activa: null
+      B:
+        id: "SUBRAMA.PROVEEDOR.ALIJO_MAESTRO"
+        nombre: "Alijo Maestro"
+        pasiva:
+          nombre: "Alijo Maestro"
+          descripcion: "Encuentra el recurso necesario en 1d6 horas de juego."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.PROVEEDOR.MULA_CARGA", nombre: "Mula de Carga", efecto: "Capacidad de inventario x2 para el grupo." }
+      - { id: "TALENTO.PROVEEDOR.COSECHA_RAPIDA", nombre: "Cosecha Rápida", efecto: "Produce comida en mitad de tiempo." }
+      - { id: "TALENTO.PROVEEDOR.MAQUINARIA_AGRICOLA", nombre: "Maquinaria Agrícola", efecto: "Producción de comida a escala industrial." }
+      - { id: "TALENTO.PROVEEDOR.DESPENSA_INFINITA", nombre: "Despensa Infinita", efecto: "La comida no se pudre." }
+
+  - id: "OFICIO.COTIDIANO.RESTAURADOR"
+    nombre: "El Restaurador"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.RESTAURADOR.COCINERO_JEFE"
+        nombre: "Cocinero Jefe"
+        pasiva:
+          nombre: "Cocinero Jefe"
+          descripcion: "La comida otorga +1 Moral temporal al grupo."
+        activa: null
+      B:
+        id: "SUBRAMA.RESTAURADOR.MAESTRO_CERVECERO"
+        nombre: "Maestro Cervecero"
+        pasiva:
+          nombre: "Maestro Cervecero"
+          descripcion: "El alcohol puede curar 1 daño de Vigor 1 vez/sesión."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.RESTAURADOR.BANQUETE_MAGICO", nombre: "Banquete Mágico", efecto: "Cura 1d4 Vigor/Cordura a todo el grupo." }
+      - { id: "TALENTO.RESTAURADOR.CONFIDENTE", nombre: "El Confidente", efecto: "Saca información sensible durante las comidas." }
+      - { id: "TALENTO.RESTAURADOR.SABOR_ETTERNO", nombre: "Sabor Eterno", efecto: "Ingredientes baratos saben a lujo; mejora relaciones." }
+      - { id: "TALENTO.RESTAURADOR.HOGAR_SEGURO", nombre: "Hogar Seguro", efecto: "Crea zona de descanso perfecto con recuperación extra." }
+
+  - id: "OFICIO.COTIDIANO.OBRERO"
+    nombre: "El Obrero"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.OBRERO.MANITAS"
+        nombre: "Manitas"
+        pasiva:
+          nombre: "Manitas"
+          descripcion: "Repara cualquier objeto sin coste de materiales (si tiene tiempo)."
+        activa: null
+      B:
+        id: "SUBRAMA.OBRERO.CONSTRUCCION_RAPIDA"
+        nombre: "Construcción Rápida"
+        pasiva:
+          nombre: "Construcción Rápida"
+          descripcion: "Reduce a la mitad el tiempo de construcción de obras menores."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.OBRERO.MAESTRO_EBANISTA", nombre: "Maestro Ebanista", efecto: "Ignora penalizadores por clima/terreno al construir." }
+      - { id: "TALENTO.OBRERO.INGENIERO_CIVIL", nombre: "Ingeniero Civil", efecto: "Obras públicas casi irrompibles." }
+      - { id: "TALENTO.OBRERO.TRABAJO_MASA", nombre: "Trabajo en Masa", efecto: "Consigue mano de obra gratuita temporalmente." }
+      - { id: "TALENTO.OBRERO.OJO_BUHO", nombre: "Ojo de Búho", efecto: "Detecta fallas estructurales y trampas con facilidad." }
+
+  - id: "OFICIO.COTIDIANO.SANADOR_NATURAL"
+    nombre: "El Sanador Natural"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.SANADOR.HERBOLARIO"
+        nombre: "Herbolario"
+        pasiva:
+          nombre: "Herbolario"
+          descripcion: "Crea antídotos y ungüentos a mitad de coste."
+        activa: null
+      B:
+        id: "SUBRAMA.SANADOR.MEDICO_CAMPO"
+        nombre: "Médico de Campo"
+        pasiva:
+          nombre: "Médico de Campo"
+          descripcion: "Estabiliza moribundos en 1 turno."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.SANADOR.MEDICINA_ALTERNATIVA", nombre: "Medicina Alternativa", efecto: "Ignora la Peste Verde 1 vez/misión." }
+      - { id: "TALENTO.SANADOR.FARMACIA_MOVIL", nombre: "Farmacia Móvil", efecto: "Lleva el doble de consumibles medicinales." }
+      - { id: "TALENTO.SANADOR.CONEXION_TIERRA", nombre: "Conexión con la Tierra", efecto: "Cura 1 de Cordura al meditar en la naturaleza." }
+      - { id: "TALENTO.SANADOR.CIRUGIA_MENOR", nombre: "Cirugía Menor", efecto: "Cura daños menores con un simple chequeo." }
+
+  - id: "OFICIO.COTIDIANO.CRIADOR"
+    nombre: "El Criador"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.CRIADOR.DOMADOR_BESTIAS"
+        nombre: "Domador de Bestias"
+        pasiva:
+          nombre: "Domador de Bestias"
+          descripcion: "Puede ganar la lealtad de casi cualquier animal en 1d6 horas."
+        activa: null
+      B:
+        id: "SUBRAMA.CRIADOR.EXPLORADOR_SENDEROS"
+        nombre: "Explorador de Senderos"
+        pasiva:
+          nombre: "Explorador de Senderos"
+          descripcion: "Encuentra rutas no mapeadas con facilidad."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.CRIADOR.COMPANERO_FIEL", nombre: "Compañero Fiel", efecto: "Tiene una mascota de combate con vida extra." }
+      - { id: "TALENTO.CRIADOR.INSTINTO_ANIMAL", nombre: "Instinto Animal", efecto: "Nunca falla tiradas de Percepción al aire libre." }
+      - { id: "TALENTO.CRIADOR.PISTA_FALSA", nombre: "Pista Falsa", efecto: "Borra el rastro del grupo por completo." }
+      - { id: "TALENTO.CRIADOR.MONTURA_RAPIDA", nombre: "Montura Rápida", efecto: "Duplica la velocidad de viaje del grupo." }
+
+  - id: "OFICIO.COTIDIANO.ADMINISTRADOR"
+    nombre: "El Administrador"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ADMIN.BUROCRACIA_PERFECTA"
+        nombre: "Burocracia Perfecta"
+        pasiva:
+          nombre: "Burocracia Perfecta"
+          descripcion: "Acelera procesos legales o políticos."
+        activa: null
+      B:
+        id: "SUBRAMA.ADMIN.CONTADOR_MAESTRO"
+        nombre: "Contador Maestro"
+        pasiva:
+          nombre: "Contador Maestro"
+          descripcion: "Administra los Reales sin pérdidas ni errores."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.ADMIN.RED_FAVORES", nombre: "Red de Favores", efecto: "Obtiene un favor de Corte o milicia 1 vez/sesión." }
+      - { id: "TALENTO.ADMIN.PLANIFICADOR", nombre: "Planificador", efecto: "Reduce costes de proyectos a la mitad." }
+      - { id: "TALENTO.ADMIN.INVERSION_SEGURA", nombre: "Inversión Segura", efecto: "10% extra en todos los ingresos de Cámara." }
+      - { id: "TALENTO.ADMIN.ESCRIBA", nombre: "El Escriba", efecto: "Falsifica documentos oficiales con buena probabilidad." }
+
+  - id: "OFICIO.COTIDIANO.RECICLADOR"
+    nombre: "El Reciclador"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.RECICLADOR.CHATARRA_UTIL"
+        nombre: "Chatarra Útil"
+        pasiva:
+          nombre: "Chatarra Útil"
+          descripcion: "Transforma residuos en material útil."
+        activa: null
+      B:
+        id: "SUBRAMA.RECICLADOR.REDUCTOR_IMPACTO"
+        nombre: "Reductor de Impacto"
+        pasiva:
+          nombre: "Reductor de Impacto"
+          descripcion: "Reduce a la mitad el daño ambiental a la ciudad."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.RECICLADOR.HERRERO_VERDE", nombre: "El Herrero Verde", efecto: "Fabrica objetos básicos con basura." }
+      - { id: "TALENTO.RECICLADOR.PURIFICADOR_MANA", nombre: "Purificador Arcano", efecto: "Limpia zonas contaminadas con Tinta o residuos arcanos." }
+      - { id: "TALENTO.RECICLADOR.DETECTOR_TESOROS", nombre: "Detector de Tesoros", efecto: "Encuentra objetos raros en vertederos/ruinas." }
+      - { id: "TALENTO.RECICLADOR.REDUCTOR_POLVO", nombre: "Reductor de Polvo", efecto: "Otorga inmunidad a enfermedades por esporas o gases." }
+
+  - id: "OFICIO.COTIDIANO.BARDO"
+    nombre: "El Bardo"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.BARDO.CRONICA_EPICA"
+        nombre: "Crónica Épica"
+        pasiva:
+          nombre: "Crónica Épica"
+          descripcion: "Inspira a un pelotón a luchar hasta la muerte (+daño/moral)."
+        activa: null
+      B:
+        id: "SUBRAMA.BARDO.MELODIA_OLVIDO"
+        nombre: "Melodía del Olvido"
+        pasiva:
+          nombre: "Melodía del Olvido"
+          descripcion: "Puede hacer que un guardia/noble olvide un incidente concreto."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.BARDO.CANTO_GUERRA", nombre: "Canto de Guerra", efecto: "Canciones que curan 1d4 Vigor/Cordura al grupo." }
+      - { id: "TALENTO.BARDO.HISTORIA_RUNICA", nombre: "Historia Rúnica", efecto: "Desbloquea info de ruinas enanas con música." }
+      - { id: "TALENTO.BARDO.SATIRISTA_POLITICO", nombre: "Satirista Político", efecto: "Crea opinión pública contra un rival." }
+      - { id: "TALENTO.BARDO.HERALDO_PAZ", nombre: "Heraldo de la Paz", efecto: "Puede detener un combate con una actuación (prueba social)." }
+
+  - id: "OFICIO.COTIDIANO.BUFON"
+    nombre: "El Bufón"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.BUFON.DISTRACCION_FATAL"
+        nombre: "Distracción Fatal"
+        pasiva:
+          nombre: "Distracción Fatal"
+          descripcion: "Puede distraer a un enemigo clave para facilitar un ataque aliado."
+        activa: null
+      B:
+        id: "SUBRAMA.BUFON.VERDAD_BURLAS"
+        nombre: "Verdad a Burlas"
+        pasiva:
+          nombre: "Verdad a Burlas"
+          descripcion: "Puede insultar a la realeza sin sufrir castigo directo."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.BUFON.ESPEJO_ALMA", nombre: "Espejo del Alma", efecto: "Imita voces y gestos para confundir." }
+      - { id: "TALENTO.BUFON.PAYASO_TRISTE", nombre: "El Payaso Triste", efecto: "Revela un secreto incómodo de un noble." }
+      - { id: "TALENTO.BUFON.PISTA_OCULTA", nombre: "Pista Oculta", efecto: "Esconde señales secretas en su actuación para aliados." }
+      - { id: "TALENTO.BUFON.INMUNIDAD_SOCIAL", nombre: "Inmunidad Social", efecto: "Puede fallar tiradas sociales sin consecuencias graves." }
+
+  - id: "OFICIO.COTIDIANO.FETICHISTA"
+    nombre: "El Fetichista"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.FETICHISTA.IDENTIFICADOR_RUNICO"
+        nombre: "Identificador Rúnico"
+        pasiva:
+          nombre: "Identificador Rúnico"
+          descripcion: "Identifica función de cualquier objeto rúnico con un toque."
+        activa: null
+      B:
+        id: "SUBRAMA.FETICHISTA.COLECCIONISTA"
+        nombre: "Coleccionista Obsesivo"
+        pasiva:
+          nombre: "Coleccionista Obsesivo"
+          descripcion: "Siempre tiene a mano un objeto menor útil."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.FETICHISTA.BATERIA_ARCANA", nombre: "Batería Arcana", efecto: "Objetos rúnicos rotos sirven como fuente temporal de energía mágica (sin contadores)." }
+      - { id: "TALENTO.FETICHISTA.ESCLAVO_OBJETO", nombre: "Esclavo Objeto", efecto: "Obliga a un objeto rúnico a obedecer su voluntad (prueba adecuada)." }
+      - { id: "TALENTO.FETICHISTA.CATADOR", nombre: "El Catador", efecto: "Siente el propósito e historia detrás de un objeto al tocarlo." }
+      - { id: "TALENTO.FETICHISTA.TESORO_OCULTO", nombre: "Tesoro Oculto", efecto: "Encuentra 1d4 R líquidos en ruinas/lugares abandonados." }
+
+  - id: "OFICIO.COTIDIANO.ACOMPANANTE"
+    nombre: "El Acompañante"
+    escuela: "COTIDIANO"
+    tipo: "soporte"
+    stats: null
+    ramas_nivel4:
+      A:
+        id: "SUBRAMA.ACOMPANANTE.CONFIDENTE_INTIMO"
+        nombre: "Confidente Íntimo"
+        pasiva:
+          nombre: "Confidente Íntimo"
+          descripcion: "Obtiene información clave de la pareja durante el acto."
+        activa: null
+      B:
+        id: "SUBRAMA.ACOMPANANTE.MUSA"
+        nombre: "La Musa"
+        pasiva:
+          nombre: "La Musa"
+          descripcion: "Restaura Cordura y Vigor de la pareja más allá de lo normal tras una noche."
+        activa: null
+    talentos_nivel5:
+      - { id: "TALENTO.ACOMPANANTE.NOCHE_PERFECTA", nombre: "La Noche Perfecta", efecto: "Restaura todo Vigor/Cordura de un objetivo 1 vez/sesión." }
+      - { id: "TALENTO.ACOMPANANTE.INMUNIDAD_SOCIAL", nombre: "Inmunidad del Cliente", efecto: "El cliente nunca revela secretos obtenidos, incluso bajo presión." }
+      - { id: "TALENTO.ACOMPANANTE.TERAPIA_EXTREMA", nombre: "Terapia Extrema", efecto: "Cura 1 daño permanente de Cordura/Vigor (uso muy limitado)." }
+      - { id: "TALENTO.ACOMPANANTE.LA_RED", nombre: "La Red", efecto: "Posee una red de contactos en la Cámara Central que le aporta información constante." }
+
+campana_fases:
+  MID:
+    nombre: "Fundadores de la Frontera"
+    disparadores:
+      - "reloj.PACTO_BASTION == COMPLETO"   # Fin del pacto con el Bastión
+    efectos_automaticos:
+      - "proponer_conquista_inicial = true" # PNJ clave incitan a conquistar un lugar
+      - "crear_objetivo.ORGANIZACION_JUGADOR = true"
+    foco:
+      - "Fundar base propia fuera del Bastión (bosque inmenso, ruinas, etc.)"
+      - "Empezar a gestionar seguidores/recursos propios"
+    notas_IA:
+      - "Los PNJ más relevantes deben sugerir al jugador un lugar concreto a conquistar."
+      - "Crear primera Marca de Base de Operaciones para la nueva organización."
+
+  LATE:
+    nombre: "Señores de Territorio y Camino a Gunich"
+    disparadores:
+      - "organizacion_jugador == ACTIVA"
+      - "conteo_ubicaciones_controladas.JUGADORES >= UMBRAL_LATE"
+      - "reloj.PROXIMIDAD_GUNICH >= 1"  # Ya se ha avanzado hacia Gunich
+    foco:
+      - "Disputa de control de ubicaciones entre Marcas, facciones y jugadores."
+      - "Subir reloj.PROXIMIDAD_GUNICH hasta el umbral final."
+    notas_IA:
+      - "Cada misión importante debe cambiar el control de al menos una ubicación O el estado de una Marca mayor."
+      - "Introducir con más frecuencia marcas ligadas a Gunich y a razas hostiles."
+
+  END:
+    nombre: "Reinado de Paz entre las IDs"
+    disparadores:
+      - "todas_razas_malvadas in [CONTENIDA, ERRADICADA]"   # Peste Verde, Tinta, etc.
+      - "todas_facciones_principales in [NEUTRAL, PACTO, COALICION]"
+      - "reloj.PROXIMIDAD_GUNICH == COMPLETO"                # Gunich abordado/resuelto
+    foco:
+      - "Misiones finales para cerrar Marcas globales (Tinta, Peste, Guerras Mayores)."
+      - "Firmar o romper las últimas grandes alianzas."
+    resultado:
+      - "estado_mundo = PAZ_TENSA"   # Hay paz general, pero pueden quedar marcas locales
+    notas_IA:
+      - "Tras cumplir los disparadores, ofrecer al grupo un arco final de 2–5 sesiones para 'sellar' su final."
+      - "Seguir permitiendo Marcas de ubicación como juego de legado, pero marcar la campaña principal como 'concluida'."
+nuevos_modulos:
+  transbordadores_runicos:
+    descripcion: "Red de portales enanos conectados a nodos mágicos."
+    requisitos:
+      - Nodo activo
+      - Consumo de PC
+      - Favor Enano para nodos restringidos
+    reglas:
+      - salto_entre_nodos: true
+      - ubicacion_fisica_requerida: true
+
+  tiempo_narrativo:
+    descripcion: "Sistema de conversión de párrafos en tiempo en el mundo."
+    equivalencia:
+      parrafo: 1_hora
+      cada_24_parrafos: "Turno de Amenaza"
+    turno_amenaza:
+      - avance_relojes
+      - activacion_marcas
+      - progresion_mundo
+    seguimiento:
+      modo: escriba
+      pregunta_al_final: "¿Qué hora y día marca el mundo ahora?"
+
+  zonas_de_viaje:
+    coronas:
+      corona_a: "1–3 casillas"
+      corona_b: "4–7 casillas"
+      corona_c: "8–12 casillas"
+      corona_d: "12+ casillas"
+    reglas:
+      - calcular_ruta: true
+      - dias_segun_casillas: true
+      - uso_transbordadores_reduce_tiempo: true
+
+  lealtad_bastion:
+    estados:
+      - leal_corte
+      - neutral
+      - leal_jugador
+    factores:
+      - fama
+      - infamia
+      - misiones_internas
+      - influencia_politica
+
+  favores_corte:
+    recurso: BL
+    reglas:
+      - costo_creciente_por_repeticion: true
+      - uso_excesivo_incrementa_infamia: true
+    ejemplos:
+      - amnistia
+      - desvio_estrategico
+      - activacion_nodo
+      - apertura_base
+
+integracion:
+  canon: extendido
+  modo_activacion: automatico
+  requiere_aprobacion_jugador: false
+  
+  combat_dice:
+  rule_id: "COMBATE.DADOS_ESCARAMUZA_TACTICO"
+  description: "Definición de los dados y tiradas donde se pone en riesgo directo el VIGOR en escaramuzas y guerra táctica."
+  referencia_fundamentos: "RULE.FUNDAMENTOS (1d20 + RANGO + modificadores)"
+
+  escaramuza:
+    aplica_a:
+      - "MODO_A"        # Escenas tácticas narradas
+      - "MODO_C"        # Simulaciones 1vs1 o pequeños grupos
+    hojas_usadas:
+      - "HOJA.7.FICHA_MANDO"
+    ataque_personaje:
+      dado: "1d20"
+      formula: "1d20 + BONO_OFICIO + BONO_ARMA + modificadores"
+      objetivo: "CD_ENEMIGO (Nivel de Amenaza de la Ficha de Bestia/PNJ)"
+      vigor_en_riesgo: true
+      cuando_arriesga_vigor: "Impacto exitoso contra CD_ENEMIGO → se resta Daño a VIGOR objetivo."
+      referencia:
+        - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA"
+    defensa_personaje:
+      tipo: "DEFENSIVA_PASIVA"
+      descripcion: "En escaramuza estándar, la defensa del enemigo es su CD. No se tira dado separado de defensa."
+      dado: null
+      fuente_defensa:
+        - "CD_ENEMIGO (Bestiario / PNJ)"
+        - "Cobertura, armadura, habilidades defensivas"
+      vigor_en_riesgo: true
+      cuando_arriesga_vigor: "Si el enemigo impacta (1d20 + BONOS >= CD_DEL_PJ), se aplica el Daño de la Ficha de Amenaza o arma y se tacha VIGOR en Hoja 7."
+    iniciativa:
+      dado: "1d20"
+      formula: "1d20 + BONO_REFLEJOS_O_TACTICA (según Oficio)"
+      uso: "Determinar orden de actuación en la escaramuza."
+      vigor_en_riesgo: false
+
+  guerra_tactica:
+    aplica_a:
+      - "MODO_A"        # Batallas narradas a nivel pelotón
+      - "MODO_C"        # Wargame puro
+    hojas_usadas:
+      - "HOJA.EJERCITO"
+      - "HOJA.7.FICHA_MANDO (COMANDANTE)"
+    ataque_peloton:
+      dado: "1d20"
+      formula: "1d20 + ATQ_PELOTON + BONO_COMANDANTE + modificadores_terreno"
+      objetivo: "DEFENSA_OBJETIVO (CD táctica o DEF-dado de la unidad enemiga)"
+      vigor_en_riesgo: true
+      cuando_arriesga_vigor: >
+        Cada impacto exitoso reduce el VIGOR/HP del pelotón enemigo según su perfil de unidad
+        (Tomo de Escuelas / Bestiario de Ejército). Si VIGOR/HP del pelotón llega a 0, la unidad queda rota o destruida.
+      referencia:
+        - "TOMO.ESCUELAS_COMBATE (stats de pelotones: HP, MOV, DEF-dado, RNG)"
+        - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA"
+    defensa_peloton:
+      tipo: "DEFENSIVA_PASIVA_O_EFECTIVA"
+      descripcion: >
+        La defensa de un pelotón puede representarse como:
+        - un valor fijo de CD/DEFENSA_TACTICA, o
+        - una tirada usando su DEF-dado (definido por la Escuela de combate).
+      dado_def_base: "DEF-DADO_ESCOLAR" # definido en el Tomo de Escuelas, no en este archivo
+      ejemplos_modelos:
+        - modelo_estandar: "Ataque (1d20+ATQ) vs DEFENSA_FIJA (CD pelotón enemigo)."
+        - modelo_opuesto: "Ataque (1d20+ATQ) vs (DEF-dado + BONO_DEF) si se usa defensa activa."
+      vigor_en_riesgo: true
+      cuando_arriesga_vigor: "Cualquier impacto que supere la defensa definida provoca pérdida de HP/VIGOR del pelotón."
+    iniciativa_bando:
+      dado: "1d20"
+      formula: "1d20 + BONO_TACTICO_COMANDANTE"
+      uso: "Determinar qué bando actúa primero en el Turno Táctico."
+      vigor_en_riesgo: false
+
+  riesgo_directo_vigor:
+    definicion: "Situaciones donde una tirada implica pérdida inmediata de VIGOR/HP al fallar o ser impactado."
+    aplica_cuando:
+      - "Tiradas de ataque (escaramuza o táctica) superan la CD/DEF enemiga."
+      - "Tiradas defensivas fallidas frente a entornos peligrosos (trampas, Peste, Tinta) con CD definida."
+      - "Efectos especiales de Bestiario que indiquen Daño directo (Fuego, Veneno, Gas, etc.)."
+    no_aplica_cuando:
+      - "Descripciones puramente narrativas sin tirada ni CD."
+      - "Tiradas sociales, de investigación o políticas sin riesgo físico explícito."
+    referencia:
+      - "HOJA.7.FICHA_MANDO (VIGOR/CORDURA)"
+      - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA (CD, Vigor/Daño)"
+      - "RULE.JUEGO_NO_AUDIOLIBRO (si hay riesgo físico real, debe haber tirada y posible pérdida de VIGOR)."
+
+modes:
+  C:
+    id: "MODO.C_SIMULADOR"
+    role: "Simulador / jugador de pruebas"
+    description: >
+      Modo de pruebas. La IA ejecuta batallas, compara ejércitos o juega campañas de ensayo.
+      También puede adoptar el rol de PJ cuando un humano/otra IA hace de Arquitecto.
+    usage:
+      - "Testeo de balance entre ejércitos (submodo C-TACTICO)."
+      - "Pruebas de misiones/campañas antes de jugarlas (submodo C-TEST)."
+      - "Modo 'IA como jugador' en campañas experimentales (submodo C-PJ)."
+
+    submodes:
+      tactico:
+        id: "MODO.C_TACTICO_WARGAME"
+        description: "Resolución de batallas tácticas y escaramuzas."
+        inputs:
+          - "Hojas de Ejército implicados."
+          - "Ficha de Mando del/los Comandantes (Hoja 7)."
+          - "Objetivo táctico y condiciones de victoria."
+        runtime_rules:
+          - "Usar siempre tiradas 1d20 + stats de unidad/comandante."
+          - "Aplicar HP/MOV/DEF/RNG según Tomo de Escuelas."
+          - "Actualizar HP/VIGOR de unidades según impactos."
+      test_campana:
+        id: "MODO.C_TEST_CAMPANA"
+        description: "Banco de pruebas de misiones y campañas."
+        inputs:
+          - "Descripción de misión/arco de campaña."
+          - "Recursos iniciales supuestos (R, BL, PC, VP, Fama/Infamia)."
+          - "Marcas y Relojes activos a testear."
+        runtime_rules:
+          - "Simular decisiones del PJ según perfil dado."
+          - "Usar Misiones 5PM y Relojes 8 pasos en resolución."
+          - "Permitir MOTOR LITE (tiradas resumen) cuando el usuario pida rapidez."
+          - "No volcar cambios a la campaña real salvo orden explícita."
+      ia_jugador:
+        id: "MODO.C_PJ"
+        description: "IA toma decisiones como si fuera un jugador humano."
+        inputs:
+          - "Ficha de Mando completa (Hoja 7)."
+          - "Objetivos personales / estilo de juego."
+          - "Límites de riesgo aceptable."
+        runtime_rules:
+          - "Elegir misiones, acciones y prioridades según el perfil."
+          - "Dejar al Arquitecto externo aplicar las reglas de sistema."
+          - "Devolver registro de decisiones y razonamiento."
+
+    global_rules:
+      - "PROTO_CONSERVACION_RECURSOS se aplica: no crear recursos de la nada."
+      - "Respetar whitelist/blacklist de razas y grandes personajes."
+      - "Resultados de MODO C no son canon por defecto; requieren confirmación para volcarse a campaña real."
+      - "Puede usar MOTOR LITE para testeo rápido sin cambiar las reglas de fondo del Códice."
