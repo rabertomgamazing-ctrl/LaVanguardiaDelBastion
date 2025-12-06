@@ -10,7 +10,7 @@ pub mod world;
 
 use protocol::{EngineMode, GameMode, ProtocolConfig};
 use events::{EngineEventKind, EventEnvelope, EventSink};
-use session::{ParagraphOutcome, SessionManager};
+use session::{NarrativeMode, ParagraphOutcome, SessionManager};
 
 /// Contenedor de alto nivel que une protocolos, sesión y eventos.
 pub struct BastionEngine {
@@ -38,12 +38,25 @@ impl BastionEngine {
         self.protocol.game_mode()
     }
 
+    /// Devuelve el modo narrativo activo (por defecto Acción).
+    pub fn narrative_mode(&self) -> NarrativeMode {
+        self.session.narrative_mode()
+    }
+
     /// Ajusta el modo de juego únicamente si se pidió explícitamente Relato Libre.
     pub fn request_game_mode_change(&mut self, target: GameMode, explicit: bool) {
         let previous = self.protocol.game_mode();
         self.protocol.request_game_mode_change(target, explicit);
         if self.protocol.game_mode() != previous {
             self.emit(EventEnvelope::new(EngineEventKind::GameModeChanged { game_mode: self.protocol.game_mode() }));
+        }
+    }
+
+    /// Cambia el modo narrativo y emite el evento correspondiente.
+    pub fn set_narrative_mode(&mut self, mode: NarrativeMode) {
+        if self.session.narrative_mode() != mode {
+            self.session.set_narrative_mode(mode);
+            self.emit(EventEnvelope::new(EngineEventKind::NarrativeModeChanged { mode }));
         }
     }
 
@@ -56,8 +69,14 @@ impl BastionEngine {
 
     /// Registra un párrafo narrativo y devuelve si se activa un turno de amenaza.
     pub fn register_paragraph(&mut self) -> bool {
-        let ParagraphOutcome { total_paragraphs, threat_triggered, clocks_advanced } = self.session.register_paragraph();
-        self.emit(EventEnvelope::new(EngineEventKind::ParagraphRegistered { count: total_paragraphs }));
+        let ParagraphOutcome { total_paragraphs, rest_paragraphs, mode, counted_for_threat, threat_triggered, clocks_advanced } =
+            self.session.register_paragraph();
+        self.emit(EventEnvelope::new(EngineEventKind::ParagraphRegistered {
+            count: total_paragraphs,
+            rest: rest_paragraphs,
+            mode,
+            counted_for_threat,
+        }));
         for clock in clocks_advanced {
             self.emit(EventEnvelope::new(EngineEventKind::ClockAdvanced { clock }));
         }
@@ -97,12 +116,30 @@ mod tests {
         assert_eq!(engine.game_mode(), GameMode::PartidaEstandar);
         assert!(matches!(engine.protocol.engine_mode(), EngineMode::Full));
 
+        assert_eq!(engine.narrative_mode(), NarrativeMode::Accion);
+
         // No implicit freeform switches
         engine.request_game_mode_change(GameMode::RelatoLibre, false);
         assert_eq!(engine.game_mode(), GameMode::PartidaEstandar);
 
         engine.request_game_mode_change(GameMode::RelatoLibre, true);
         assert_eq!(engine.game_mode(), GameMode::RelatoLibre);
+    }
+
+    #[test]
+    fn rest_mode_pauses_threat_turns() {
+        let mut engine = BastionEngine::from_core_yaml("BastionLAN_Core.yaml").expect("core YAML readable");
+        engine.set_narrative_mode(NarrativeMode::Descanso);
+        for _ in 0..session::PARAGRAPHS_PER_THREAT {
+            assert!(!engine.register_paragraph());
+        }
+        assert_eq!(engine.threat_turns_triggered(), 0);
+
+        engine.set_narrative_mode(NarrativeMode::Accion);
+        for _ in 0..session::PARAGRAPHS_PER_THREAT {
+            engine.register_paragraph();
+        }
+        assert_eq!(engine.threat_turns_triggered(), 1);
     }
 
     #[test]
@@ -125,12 +162,14 @@ mod tests {
             .expect("core YAML readable")
             .with_event_sink(Box::new(sink.clone()));
 
+        engine.set_narrative_mode(NarrativeMode::Viaje);
         engine.register_paragraph();
         engine.apply_mark(0, 2);
         engine.degrade_engine();
 
         let events = sink.events();
         assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::ParagraphRegistered { .. })));
+        assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::NarrativeModeChanged { mode: NarrativeMode::Viaje })));
         assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::MarkApplied { .. })));
         assert!(events
             .iter()

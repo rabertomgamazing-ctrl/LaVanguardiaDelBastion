@@ -1,6 +1,6 @@
 use crate::dice::RollResult;
 use crate::protocol::{EngineMode, GameMode};
-use crate::session::{Clock, MarkTrack};
+use crate::session::{Clock, MarkTrack, NarrativeMode};
 use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,8 @@ pub enum AudioPreset {
 pub enum EngineEventKind {
     ModeChanged { mode: EngineMode },
     GameModeChanged { game_mode: GameMode },
-    ParagraphRegistered { count: u32 },
+    NarrativeModeChanged { mode: NarrativeMode },
+    ParagraphRegistered { count: u32, rest: u32, mode: NarrativeMode, counted_for_threat: bool },
     ThreatTurn { total: u32 },
     RollResolved { roll: RollResult },
     ClockAdvanced { clock: Clock },
@@ -58,6 +59,12 @@ impl EventEnvelope {
                 EngineMode::Lite => (vec![FxPreset::Glitch], vec![AudioPreset::BellStrike]),
             },
             EngineEventKind::GameModeChanged { .. } => (vec![FxPreset::Fog], vec![AudioPreset::LowDrone]),
+            EngineEventKind::NarrativeModeChanged { mode } => match mode {
+                NarrativeMode::Accion => (vec![FxPreset::RunePulse], vec![AudioPreset::LowDrone]),
+                NarrativeMode::Descanso => (vec![FxPreset::Fog], vec![AudioPreset::LowDrone]),
+                NarrativeMode::Viaje => (vec![FxPreset::RunePulse], vec![AudioPreset::BellStrike]),
+                NarrativeMode::Libre => (vec![FxPreset::Fog], vec![AudioPreset::DiceHit]),
+            },
             EngineEventKind::ParagraphRegistered { .. } => (vec![], vec![]),
             EngineEventKind::ThreatTurn { .. } => (vec![FxPreset::BloodVignette], vec![AudioPreset::ThreatPulse]),
             EngineEventKind::RollResolved { .. } => (vec![FxPreset::RunePulse], vec![AudioPreset::DiceHit]),

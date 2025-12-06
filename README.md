@@ -11,6 +11,8 @@ Motor base en Rust para un cliente Tauri scrimdark (inspirado en Darkest Dungeon
 - `ai`: coordinador de proveedores (`Ollama`, `Gemini`, `ExternalApi`) con roles A/B/C del Arquitecto IA.
 - `persistence`: serializa/deserializa campañas en JSON para slots locales.
 - `world`: catálogo de Marcas/Facciones (27–32) con los ejércitos listos para desplegar.
+- **Modos narrativos**: `NarrativeMode` permite alternar Acción, Descanso, Viaje o Libre; solo Acción/Viaje suman al contador de 24
+  párrafos y disparan Turnos de Amenaza.
 
 ## Próximos pasos
 - Integrar comandos Tauri que expongan los eventos y estados al frontend.
@@ -60,9 +62,13 @@ Los identificadores 27–32 del YAML principal se exponen en `world::core_factio
 - **Intro scrimdark** y **firma del Bastión** se entregan al Narrador a través de `ModeAOnboarding::default().as_prompts()` para anclar el tono y recordar que Kaelen mantiene el mando.
 - **Cuenta de 24 párrafos narrativos**: se inyecta en el prompt de modo A con `paragraph_limit` usando `PARAGRAPHS_PER_THREAT` para respetar el Turno de Amenaza.
 - **Misión de tutorial**: el prompt de arranque obliga a ejecutar una escolta de convoy con tiradas visibles y consecuencias en Relojes antes de avanzar a misiones libres.
+- **Modos de descanso/viaje/libre**: el Narrador puede alternar `NarrativeMode` según intención del jugador; Descanso no avanza el
+  contador de 24 párrafos, Viaje sí (incluye campanas/FX de ruta) y Libre solo se permite bajo petición explícita.
 
 ## Integración reactiva por eventos
 
 - Usa `BastionEngine::with_event_sink` para conectar un emisor (por ejemplo, un comando Tauri) y recibir `EventEnvelope` en cada párrafo, cambio de modo o avance de marcas/relojes.
 - `MemoryEventSink` facilita pruebas o prototipos de UI al almacenar la secuencia completa de eventos generados.
 - `SessionManager::apply_mark` devuelve el estado actualizado de las Marcas para disparar FX/sonido asociados a las facciones activas.
+- `EngineEventKind::NarrativeModeChanged` informa al frontend cuándo se pasa a Descanso/Viaje/Libre y qué presets audiovisuales usar,
+  mientras que `ParagraphRegistered` indica si el párrafo contó o no para la amenaza (útil para animar respiros).

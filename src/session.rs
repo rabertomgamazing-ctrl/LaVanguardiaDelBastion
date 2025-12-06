@@ -4,6 +4,25 @@ use serde::{Deserialize, Serialize};
 
 pub const PARAGRAPHS_PER_THREAT: u32 = 24;
 
+/// Submodos narrativos que afectan el conteo de párrafos y el ritmo de amenaza.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Copy)]
+pub enum NarrativeMode {
+    /// Escena de misión o relato activo: cuenta para el Turno de Amenaza.
+    Accion,
+    /// Tiempo de respiro en el Bastión: no avanza el reloj de párrafos.
+    Descanso,
+    /// Viaje entre nodos rúnicos o coronas de distancia.
+    Viaje,
+    /// Escena libre solicitada explícitamente por jugadores.
+    Libre,
+}
+
+impl NarrativeMode {
+    pub fn counts_for_threat(&self) -> bool {
+        matches!(self, NarrativeMode::Accion | NarrativeMode::Viaje)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Clock {
     pub label: String,
@@ -56,8 +75,10 @@ impl MarkTrack {
 pub struct SessionManager {
     engine_mode: EngineMode,
     paragraphs: u32,
+    rest_paragraphs: u32,
     threat_triggers: u32,
     last_threat_at: Option<DateTime<Utc>>,
+    narrative_mode: NarrativeMode,
     pub clocks: Vec<Clock>,
     pub marks: Vec<MarkTrack>,
 }
@@ -66,6 +87,9 @@ pub struct SessionManager {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParagraphOutcome {
     pub total_paragraphs: u32,
+    pub rest_paragraphs: u32,
+    pub mode: NarrativeMode,
+    pub counted_for_threat: bool,
     pub threat_triggered: bool,
     pub clocks_advanced: Vec<Clock>,
 }
@@ -75,8 +99,10 @@ impl SessionManager {
         Self {
             engine_mode,
             paragraphs: 0,
+            rest_paragraphs: 0,
             threat_triggers: 0,
             last_threat_at: None,
+            narrative_mode: NarrativeMode::Accion,
             clocks: vec![Clock::new("Reloj de Amenaza", 8)],
             marks: vec![MarkTrack::new("Marcas del Bastión", 24)],
         }
@@ -88,11 +114,16 @@ impl SessionManager {
 
     /// Registra un párrafo; si alcanza 24 activa Turno de Amenaza.
     pub fn register_paragraph(&mut self) -> ParagraphOutcome {
-        self.paragraphs += 1;
+        let counted_for_threat = self.narrative_mode.counts_for_threat();
+        if counted_for_threat {
+            self.paragraphs += 1;
+        } else {
+            self.rest_paragraphs += 1;
+        }
         let mut threat_triggered = false;
         let mut clocks_advanced = Vec::new();
 
-        if self.paragraphs % PARAGRAPHS_PER_THREAT == 0 {
+        if counted_for_threat && self.paragraphs % PARAGRAPHS_PER_THREAT == 0 {
             threat_triggered = true;
             self.threat_triggers += 1;
             self.last_threat_at = Some(Utc::now());
@@ -104,6 +135,9 @@ impl SessionManager {
 
         ParagraphOutcome {
             total_paragraphs: self.paragraphs,
+            rest_paragraphs: self.rest_paragraphs,
+            mode: self.narrative_mode,
+            counted_for_threat,
             threat_triggered,
             clocks_advanced,
         }
@@ -119,6 +153,15 @@ impl SessionManager {
 
     pub fn last_threat_at(&self) -> Option<DateTime<Utc>> {
         self.last_threat_at
+    }
+
+    pub fn narrative_mode(&self) -> NarrativeMode {
+        self.narrative_mode
+    }
+
+    /// Permite cambiar el modo narrativo (Acción, Descanso, Viaje o Libre).
+    pub fn set_narrative_mode(&mut self, mode: NarrativeMode) {
+        self.narrative_mode = mode;
     }
 
     /// Avanza una marca específica y devuelve su estado para emitir eventos.
@@ -163,5 +206,20 @@ mod tests {
         let updated = session.apply_mark(0, 3).expect("mark exists");
         assert_eq!(updated.filled, 3);
         assert_eq!(session.marks[0].filled, 3);
+    }
+
+    #[test]
+    fn rest_mode_pauses_threat_counter() {
+        let mut session = SessionManager::new(EngineMode::Full);
+        session.set_narrative_mode(NarrativeMode::Descanso);
+        for _ in 0..PARAGRAPHS_PER_THREAT {
+            let outcome = session.register_paragraph();
+            assert_eq!(outcome.mode, NarrativeMode::Descanso);
+            assert!(!outcome.counted_for_threat);
+            assert!(!outcome.threat_triggered);
+        }
+        assert_eq!(session.threat_turns_triggered(), 0);
+        assert_eq!(session.paragraphs(), 0);
+        assert_eq!(session.rest_paragraphs, PARAGRAPHS_PER_THREAT);
     }
 }
