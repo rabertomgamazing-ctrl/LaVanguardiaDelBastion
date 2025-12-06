@@ -76,6 +76,50 @@ impl ModeAOnboarding {
     }
 }
 
+/// Tarjetas para el selector inicial de modos A/B/C.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ArchitectModeCard {
+    pub role: IaRole,
+    pub headline: String,
+    pub borrows_from: Vec<IaRole>,
+    pub primary_mechanics: Vec<String>,
+}
+
+pub fn architect_mode_cards() -> Vec<ArchitectModeCard> {
+    vec![
+        ArchitectModeCard {
+            role: IaRole::NarradorA,
+            headline: "Modo A: Narrador".to_string(),
+            borrows_from: vec![IaRole::JuezB, IaRole::SimuladorC],
+            primary_mechanics: vec![
+                "Tono scrimdark y 24 párrafos antes del Turno de Amenaza".to_string(),
+                "Tiradas visibles y tutorial obligatorio".to_string(),
+                "Activa FX de campanas/viñeta y respeta descansos".to_string(),
+            ],
+        },
+        ArchitectModeCard {
+            role: IaRole::JuezB,
+            headline: "Modo B: Juez".to_string(),
+            borrows_from: vec![IaRole::NarradorA, IaRole::SimuladorC],
+            primary_mechanics: vec![
+                "Valida reglas y aplica dados/rangos".to_string(),
+                "Convoca eventos de Corte y contrabando semanal".to_string(),
+                "Puede solicitar apoyo narrativo si faltan descripciones".to_string(),
+            ],
+        },
+        ArchitectModeCard {
+            role: IaRole::SimuladorC,
+            headline: "Modo C: Simulador".to_string(),
+            borrows_from: vec![IaRole::NarradorA, IaRole::JuezB],
+            primary_mechanics: vec![
+                "Propaga relojes/marcas y rutas de viaje".to_string(),
+                "Escala fama/infamia según decisiones".to_string(),
+                "Pide resolución de tiradas si necesita juicio".to_string(),
+            ],
+        },
+    ]
+}
+
 /// Orquesta proveedores para producir una respuesta compuesta.
 #[derive(Default)]
 pub struct AiCoordinator;
@@ -108,5 +152,13 @@ mod tests {
         let narrator_prompt = &prompts[0].content;
         assert!(narrator_prompt.contains("Turno de Amenaza"));
         assert!(narrator_prompt.contains("Tutorial"));
+    }
+
+    #[test]
+    fn architect_cards_link_modes() {
+        let cards = architect_mode_cards();
+        assert_eq!(cards.len(), 3);
+        assert!(cards.iter().any(|c| c.role == IaRole::NarradorA && c.borrows_from.contains(&IaRole::JuezB)));
+        assert!(cards.iter().any(|c| c.role == IaRole::JuezB && c.primary_mechanics.iter().any(|m| m.contains("Corte"))));
     }
 }

@@ -11,6 +11,7 @@ pub mod world;
 use protocol::{EngineMode, GameMode, ProtocolConfig};
 use events::{EngineEventKind, EventEnvelope, EventSink};
 use session::{NarrativeMode, ParagraphOutcome, SessionManager};
+use ai::architect_mode_cards;
 
 /// Contenedor de alto nivel que une protocolos, sesión y eventos.
 pub struct BastionEngine {
@@ -31,6 +32,12 @@ impl BastionEngine {
     pub fn with_event_sink(mut self, sink: Box<dyn EventSink>) -> Self {
         self.event_sink = Some(sink);
         self
+    }
+
+    /// Emite el menú inicial de modos A/B/C para que la UI arranque en esa pantalla.
+    pub fn present_architect_modes(&self) {
+        let cards = architect_mode_cards();
+        self.emit(EventEnvelope::new(EngineEventKind::ArchitectModesMenu { cards }));
     }
 
     /// Devuelve el modo de juego activo (Partida Estándar por defecto).
@@ -65,6 +72,23 @@ impl BastionEngine {
         self.protocol.set_engine_mode(EngineMode::Lite);
         self.session.update_engine_mode(EngineMode::Lite);
         self.emit(EventEnvelope::new(EngineEventKind::ModeChanged { mode: EngineMode::Lite }));
+    }
+
+    /// Ajusta fama/infamia y emite el evento para la capa audiovisual o UI.
+    pub fn adjust_reputation(&mut self, fame_delta: i32, infamy_delta: i32) {
+        let rep = self.session.adjust_reputation(fame_delta, infamy_delta);
+        self.emit(EventEnvelope::new(EngineEventKind::ReputationChanged { fame: rep.fame, infamy: rep.infamy }));
+    }
+
+    /// Ejecuta el ciclo semanal (Corte y contrabando) y emite los eventos correspondientes.
+    pub fn run_weekly_events(&mut self) {
+        let outcome = self.session.advance_week();
+        if outcome.court_event {
+            self.emit(EventEnvelope::new(EngineEventKind::CourtSummoned { week: outcome.week }));
+        }
+        if outcome.contraband_event {
+            self.emit(EventEnvelope::new(EngineEventKind::ContrabandReport { week: outcome.week }));
+        }
     }
 
     /// Registra un párrafo narrativo y devuelve si se activa un turno de amenaza.
@@ -174,5 +198,23 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e.kind, EngineEventKind::ModeChanged { mode: EngineMode::Lite })));
+    }
+
+    #[test]
+    fn architect_menu_and_reputation_events_emit() {
+        let sink = MemoryEventSink::new();
+        let mut engine = BastionEngine::from_core_yaml("BastionLAN_Core.yaml")
+            .expect("core YAML readable")
+            .with_event_sink(Box::new(sink.clone()));
+
+        engine.present_architect_modes();
+        engine.adjust_reputation(5, 2);
+        engine.run_weekly_events();
+
+        let events = sink.events();
+        assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::ArchitectModesMenu { .. })));
+        assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::ReputationChanged { fame: 5, infamy: 2 })));
+        assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::CourtSummoned { week: 1 })));
+        assert!(events.iter().any(|e| matches!(e.kind, EngineEventKind::ContrabandReport { week: 1 })));
     }
 }

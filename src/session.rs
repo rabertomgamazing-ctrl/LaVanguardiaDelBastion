@@ -23,6 +23,20 @@ impl NarrativeMode {
     }
 }
 
+/// Fama/Infamia acumulada por la campaña.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Copy, Default)]
+pub struct Reputation {
+    pub fame: i32,
+    pub infamy: i32,
+}
+
+impl Reputation {
+    pub fn adjust(&mut self, fame_delta: i32, infamy_delta: i32) {
+        self.fame = (self.fame + fame_delta).max(0);
+        self.infamy = (self.infamy + infamy_delta).max(0);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Clock {
     pub label: String,
@@ -79,6 +93,8 @@ pub struct SessionManager {
     threat_triggers: u32,
     last_threat_at: Option<DateTime<Utc>>,
     narrative_mode: NarrativeMode,
+    weeks_elapsed: u32,
+    reputation: Reputation,
     pub clocks: Vec<Clock>,
     pub marks: Vec<MarkTrack>,
 }
@@ -103,6 +119,8 @@ impl SessionManager {
             threat_triggers: 0,
             last_threat_at: None,
             narrative_mode: NarrativeMode::Accion,
+            weeks_elapsed: 0,
+            reputation: Reputation::default(),
             clocks: vec![Clock::new("Reloj de Amenaza", 8)],
             marks: vec![MarkTrack::new("Marcas del Bastión", 24)],
         }
@@ -159,6 +177,24 @@ impl SessionManager {
         self.narrative_mode
     }
 
+    pub fn reputation(&self) -> Reputation {
+        self.reputation
+    }
+
+    pub fn adjust_reputation(&mut self, fame_delta: i32, infamy_delta: i32) -> Reputation {
+        self.reputation.adjust(fame_delta, infamy_delta);
+        self.reputation
+    }
+
+    pub fn advance_week(&mut self) -> WeeklyOutcome {
+        self.weeks_elapsed += 1;
+        WeeklyOutcome {
+            week: self.weeks_elapsed,
+            court_event: true,
+            contraband_event: true,
+        }
+    }
+
     /// Permite cambiar el modo narrativo (Acción, Descanso, Viaje o Libre).
     pub fn set_narrative_mode(&mut self, mode: NarrativeMode) {
         self.narrative_mode = mode;
@@ -170,6 +206,13 @@ impl SessionManager {
         track.apply(amount);
         Some(track.clone())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WeeklyOutcome {
+    pub week: u32,
+    pub court_event: bool,
+    pub contraband_event: bool,
 }
 
 #[cfg(test)]
@@ -221,5 +264,18 @@ mod tests {
         assert_eq!(session.threat_turns_triggered(), 0);
         assert_eq!(session.paragraphs(), 0);
         assert_eq!(session.rest_paragraphs, PARAGRAPHS_PER_THREAT);
+    }
+
+    #[test]
+    fn reputation_and_weekly_events_progress() {
+        let mut session = SessionManager::new(EngineMode::Full);
+        let rep = session.adjust_reputation(3, 1);
+        assert_eq!(rep.fame, 3);
+        assert_eq!(rep.infamy, 1);
+
+        let week = session.advance_week();
+        assert_eq!(week.week, 1);
+        assert!(week.court_event);
+        assert!(week.contraband_event);
     }
 }

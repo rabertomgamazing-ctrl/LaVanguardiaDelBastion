@@ -13,6 +13,9 @@ Motor base en Rust para un cliente Tauri scrimdark (inspirado en Darkest Dungeon
 - `world`: catálogo de Marcas/Facciones (27–32) con los ejércitos listos para desplegar.
 - **Modos narrativos**: `NarrativeMode` permite alternar Acción, Descanso, Viaje o Libre; solo Acción/Viaje suman al contador de 24
   párrafos y disparan Turnos de Amenaza.
+- **Fama/Infamia y ciclo semanal**: `SessionManager` y `CampaignState` guardan `Reputation` y habilitan eventos de Corte y contrabando cada semana.
+- **Antirruidos y FX**: cada `EventEnvelope` lleva un perfil `anti_noise` para aplicar low-pass o gate en los presets que puedan saturar.
+- **Selector inicial A/B/C**: `BastionEngine::present_architect_modes` entrega las tarjetas de Modo A/B/C para que la primera pantalla sea ese menú.
 
 ## Próximos pasos
 - Integrar comandos Tauri que expongan los eventos y estados al frontend.
@@ -72,3 +75,12 @@ Los identificadores 27–32 del YAML principal se exponen en `world::core_factio
 - `SessionManager::apply_mark` devuelve el estado actualizado de las Marcas para disparar FX/sonido asociados a las facciones activas.
 - `EngineEventKind::NarrativeModeChanged` informa al frontend cuándo se pasa a Descanso/Viaje/Libre y qué presets audiovisuales usar,
   mientras que `ParagraphRegistered` indica si el párrafo contó o no para la amenaza (útil para animar respiros).
+- `EngineEventKind::ArchitectModesMenu` entrega las tarjetas de Modo A/B/C (cada una apalanca mecánicas de los otros modos) para que la primera pantalla sea el selector.
+- `anti_noise` en cada `EventEnvelope` indica si aplicar low-pass o gate en FX ruidosos al encadenar Turno de Amenaza, Corte o contrabando.
+
+## Fama/Infamia y eventos semanales
+
+- Ajusta la reputación con `BastionEngine::adjust_reputation(fama_delta, infamia_delta)`; serializa en las campañas y dispara `EngineEventKind::ReputationChanged`.
+- Ejecuta `BastionEngine::run_weekly_events()` al cerrar cada bloque de juego para lanzar `CourtSummoned` y `ContrabandReport`, listos para enlazar FX de campanas/susurros con anti-ruido aplicado.
+- El Juez (Modo B) puede convocar la Corte o informar de contrabando, y el Simulador (Modo C) usa la reputación para propagar consecuencias en marcas y rutas.
+

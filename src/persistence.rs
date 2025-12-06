@@ -1,5 +1,5 @@
 use crate::protocol::{EngineMode, GameMode};
-use crate::session::SessionManager;
+use crate::session::{Reputation, SessionManager};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -20,9 +20,8 @@ pub struct CampaignState {
     pub engine_mode: EngineMode,
     pub game_mode: GameMode,
     pub session: SessionManager,
-    pub fame: i32,
-    pub infamy: i32,
     pub bastion_favor: i32,
+    pub reputation: Reputation,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -33,9 +32,8 @@ impl CampaignState {
             engine_mode,
             game_mode,
             session: SessionManager::new(engine_mode),
-            fame: 0,
-            infamy: 0,
             bastion_favor: 0,
+            reputation: Reputation::default(),
             updated_at: Utc::now(),
         }
     }
@@ -65,6 +63,11 @@ impl CampaignState {
             mark.apply(amount);
         }
     }
+
+    pub fn adjust_reputation(&mut self, fame_delta: i32, infamy_delta: i32) {
+        let rep = self.session.adjust_reputation(fame_delta, infamy_delta);
+        self.reputation = rep;
+    }
 }
 
 #[cfg(test)]
@@ -77,12 +80,14 @@ mod tests {
         let mut state = CampaignState::new("Slot 1", EngineMode::Full, GameMode::PartidaEstandar);
         state.apply_clock_tick("Reloj de Amenaza");
         state.apply_mark("Marcas del Bastión", 3);
+        state.adjust_reputation(2, 1);
 
         let path = "./tmp_state.json";
         state.save_to_file(path).expect("write state");
         let loaded = CampaignState::load_from_file(path).expect("read state");
         assert_eq!(loaded.session.clocks[0].filled, 1);
         assert_eq!(loaded.session.marks[0].filled, 3);
+        assert_eq!(loaded.reputation.fame, 2);
         let _ = File::create(path); // truncate for cleanup
     }
 }
