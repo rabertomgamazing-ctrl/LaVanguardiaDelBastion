@@ -36,9 +36,9 @@ cargo test
 12. **Visor de tablas**: panel interactivo con Hoja 1, Hoja 7, Misiones 5 PM, Relojes y Marcas con búsqueda.
 13. **Panel de viaje rúnico**: mapa por Coronas de Distancia con opción de salto si hay nodo activado y coste de PC/Favor Enano.
 14. **Relojes y marcas visuales**: HUD con segmentos llenables (8 pasos/24 marcas) y alertas cromáticas al avanzar.
-15. **Turno de Amenaza**: pantalla/overlay especial que se dispara cada 24 párrafos con FX, ruido y mensaje del Cronista.
+15. **Turno de Amenaza**: pantalla/overlay especial que solo se dispara cada 24 párrafos si hay una Marca del Cronista activa en ese tramo; incluir un mensaje reactivo por cada Marca que avanza peligrosamente en el reloj.
 16. **Sala de calibración audiovisual**: espacio de prueba para volumen, contraste y accesibilidad (reducir parpadeos/ruido).
 17. **Logs diegéticos**: bitácora en-world (voz del Cronista) que registre cambios de modo, tiradas y activaciones de nodos.
 18. **Modo desarrollador**: toggle oculto para simular fallos de proveedores IA y forzar `ENGINE LITE` o eventos especiales.
 19. **CLI Lore Linter**: herramienta Rust para validar que los textos generados no inventen Casas/Marcas y respeten la regla de 24 párrafos.
-20. **Pruebas automatizadas**: suites que simulan sesiones completas y verifican adherencia a protocolos y conteo de párrafos/amenazas.
+20. **Pruebas automatizadas (Modo C)**: suites en Modo C que simulan sesiones completas y verifican adherencia a protocolos y conteo de párrafos/amenazas.
