@@ -1,0 +1,17 @@
+[package]
+name = "LaVanguardiaDelBastion"
+version = "0.1.0"
+edition = "2024"
+authors = ["Proyecto Bastión"]
+description = "Motor base scrimdark con protocolos de juego y AI híbrida"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+rand = "0.8"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
