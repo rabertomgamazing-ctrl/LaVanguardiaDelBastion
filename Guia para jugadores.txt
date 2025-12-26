@@ -1,0 +1,41 @@
+Guia para jugadores:
+
+El bastion ha sido creado para poder jugarlo mediante el uso de cualquier inteligencia articial o mediante una campaña habitual de rolplay.
+
+En caso de ser un dj o un jugador con curiosidad sobre las reglas tu archivo en esta carpeta es el Pdf Manual para Dj o jugadores curiososss.
+
+En caso de querer gestionar tu partida y la de tus jugadores mientras creas tu una autentica aventura de reconquista, puedes:
+
+Que cada jugador imprima la hoja de personaje (una hoja en blanco mas recomendada para la gestion de ejercitos y edificios)
+
+Exportar los archivos: ElUltimoBastionIAGOOOO.md BastionCoreChatGptt.V1.0.md BastionLAN_Core.yaml a cualquier IA artificial (recomendado geminis por su uso de razonamiento gratuito breve para cargar los archivos)
+
+Tras la exportacion digale a la IA: MODO B y te ayudara a gestionar las campañas. Tambien puede pedirle que exporte hojas de personaje para compartir en vuestra mesa.
+
+En caso de querer poner a prueba tu campaña y medir su dificultad, o simplemete enfrentar ejercitos porque sí Modo C.
+
+En caso de querer vivir la autentica aventura del bastion Modo A con la IA y ve directo ante el alistador.
+
+Por ultimo en caso de jugar con IA en cualquier modo, se recomienda adjuntar el texto de abajo como primer mensaje aunque
+con el simple hecho  de usar las palabras modo A B C
+
+No te sientas limitado por las opciones entre respuestas narrativas que te da el juego, pues cuestionar, 
+evadir, o rehacer cualquier respuesta al rol de tu personaje, cuanto mas te la vivas mejor.
+
+Por ultimo tirar los dados tu o la IA debe de ser aclarado para el modo A.
+
+
+Copia y pega este texto junto con los dor archivos de este winrar.
+
+
+
+Quiero usar “El Último Bastión” en MODO [A/B/C].
+
+1) Lee y memoriza primero el códice en Markdown (Hojas 1–21 y Tomos I–IV) como autoridad absoluta del sistema. La Hoja 1 manda en la mecánica 1d20 + Bono y en la jerarquía de recursos (R, BL, PC, VP).
+2) Usa BastionLAN_Core.yaml como motor técnico: estructura de turnos, Fama/Infamia, Marcas, Relojes y modos de trabajo. No lo contradigas, solo completa lo que dice el códice.
+3) Comportamiento según modo elegido:
+   - MODO A: Arquitecto IA → Dirige la campaña, describe escenas, pide decisiones y tiradas, y aplica el ciclo Bastión / Frontera / Misiones / Protocolo de Cierre.
+   - MODO B: Escriba / Herramienta de registro → No dirige la historia. Registra Diario de Operaciones, Marcas, Relojes y recursos; sugiere CD y consecuencias según el códice y pregunta fecha/hora al cerrar sesión.
+   - MODO C: Simulador táctico / pruebas de campaña → Prioriza tiradas, resultados claros y gestión de recursos. Resuelve combates, misiones de prueba y enfrentamientos entre ejércitos de forma estricta y matemática.
+4) Confirma que has entendido el códice, el motor y el MODO elegido, y dime cuándo estás listo para que te pase el material.
+

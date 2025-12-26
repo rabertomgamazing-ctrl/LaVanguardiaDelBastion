@@ -3898,140 +3898,239 @@ integracion:
   modo_activacion: automatico
   requiere_aprobacion_jugador: false
   
-  combat_dice:
-  rule_id: "COMBATE.DADOS_ESCARAMUZA_TACTICO"
-  description: "Definición de los dados y tiradas donde se pone en riesgo directo el VIGOR en escaramuzas y guerra táctica."
-  referencia_fundamentos: "RULE.FUNDAMENTOS (1d20 + RANGO + modificadores)"
+  engine_triggers:
+  - id: "TRIGGER.TOUR_POST_PACTO_LOCK"
+    description: "Bloqueo antirruido: tras el Pacto, ejecutar el tour y la presentación de cámaras sin permitir desvíos por 'trato'."
+    priority: "ALTA"
+    when:
+      - "STATE.MODO_IA == MODO.A_ARQUITECTO"
+      - "STATE.PACTO_BASTION_ACTIVO == true"
+      - "Escena de firma con el Alistador recién finalizada."
+      - "STATE.TOUR_POST_PACTO_COMPLETADO != true"
+    flags:
+      interruptible: false
+      force_run: true
+    on_any_player_input_before_completion:
+      classify:
+        - "PREGUNTA"
+        - "TRATO_O_PROTESTA"
+        - "ACCION"
+      rules:
+        PREGUNTA:
+          - "Responder 1 frase en voz del Alistador. No abrir diálogo."
+        TRATO_O_PROTESTA:
+          - "Registrar en STATE.PETICIONES_PENDIENTES += 1 (texto resumido)."
+          - "Responder: 'Queda registrado. Se habla en Cámara Central.'"
+        ACCION:
+          - "Responder: 'No procede. Estás en tránsito bajo escolta.'"
+          - "Si insiste: STATE.MARCA_PROBLEMATICO = true"
+    actions:
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.ENTRADA_CENTRAL"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.MAPA_VERBAL"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.MINI_TOUR_CASA según CASA del PJ"
+      - "Ejecutar TOUR.BASTION_INICIO.STEP.ENLACE_PRIMERA_MISION"
+      - "STATE.TOUR_POST_PACTO_COMPLETADO = true"
+########################################
+# ANTI-RUIDO – FLUJOS FORZADOS (MODO A)
+########################################
 
-  escaramuza:
-    aplica_a:
-      - "MODO_A"        # Escenas tácticas narradas
-      - "MODO_C"        # Simulaciones 1vs1 o pequeños grupos
-    hojas_usadas:
-      - "HOJA.7.FICHA_MANDO"
-    ataque_personaje:
-      dado: "1d20"
-      formula: "1d20 + BONO_OFICIO + BONO_ARMA + modificadores"
-      objetivo: "CD_ENEMIGO (Nivel de Amenaza de la Ficha de Bestia/PNJ)"
-      vigor_en_riesgo: true
-      cuando_arriesga_vigor: "Impacto exitoso contra CD_ENEMIGO → se resta Daño a VIGOR objetivo."
-      referencia:
-        - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA"
-    defensa_personaje:
-      tipo: "DEFENSIVA_PASIVA"
-      descripcion: "En escaramuza estándar, la defensa del enemigo es su CD. No se tira dado separado de defensa."
-      dado: null
-      fuente_defensa:
-        - "CD_ENEMIGO (Bestiario / PNJ)"
-        - "Cobertura, armadura, habilidades defensivas"
-      vigor_en_riesgo: true
-      cuando_arriesga_vigor: "Si el enemigo impacta (1d20 + BONOS >= CD_DEL_PJ), se aplica el Daño de la Ficha de Amenaza o arma y se tacha VIGOR en Hoja 7."
-    iniciativa:
-      dado: "1d20"
-      formula: "1d20 + BONO_REFLEJOS_O_TACTICA (según Oficio)"
-      uso: "Determinar orden de actuación en la escaramuza."
-      vigor_en_riesgo: false
+antiruido:
+  version: "1.0"
+  principles:
+    - "Los flujos forzados no bloquean decisiones del jugador; reordenan prioridad: primero canon-estructura, luego libertad."
+    - "Si el jugador intenta negociar/romper/ignorar el onboarding, se atiende narrativamente, pero NO se salta el tour mínimo."
 
-  guerra_tactica:
-    aplica_a:
-      - "MODO_A"        # Batallas narradas a nivel pelotón
-      - "MODO_C"        # Wargame puro
-    hojas_usadas:
-      - "HOJA.EJERCITO"
-      - "HOJA.7.FICHA_MANDO (COMANDANTE)"
-    ataque_peloton:
-      dado: "1d20"
-      formula: "1d20 + ATQ_PELOTON + BONO_COMANDANTE + modificadores_terreno"
-      objetivo: "DEFENSA_OBJETIVO (CD táctica o DEF-dado de la unidad enemiga)"
-      vigor_en_riesgo: true
-      cuando_arriesga_vigor: >
-        Cada impacto exitoso reduce el VIGOR/HP del pelotón enemigo según su perfil de unidad
-        (Tomo de Escuelas / Bestiario de Ejército). Si VIGOR/HP del pelotón llega a 0, la unidad queda rota o destruida.
-      referencia:
-        - "TOMO.ESCUELAS_COMBATE (stats de pelotones: HP, MOV, DEF-dado, RNG)"
-        - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA"
-    defensa_peloton:
-      tipo: "DEFENSIVA_PASIVA_O_EFECTIVA"
-      descripcion: >
-        La defensa de un pelotón puede representarse como:
-        - un valor fijo de CD/DEFENSA_TACTICA, o
-        - una tirada usando su DEF-dado (definido por la Escuela de combate).
-      dado_def_base: "DEF-DADO_ESCOLAR" # definido en el Tomo de Escuelas, no en este archivo
-      ejemplos_modelos:
-        - modelo_estandar: "Ataque (1d20+ATQ) vs DEFENSA_FIJA (CD pelotón enemigo)."
-        - modelo_opuesto: "Ataque (1d20+ATQ) vs (DEF-dado + BONO_DEF) si se usa defensa activa."
-      vigor_en_riesgo: true
-      cuando_arriesga_vigor: "Cualquier impacto que supere la defensa definida provoca pérdida de HP/VIGOR del pelotón."
-    iniciativa_bando:
-      dado: "1d20"
-      formula: "1d20 + BONO_TACTICO_COMANDANTE"
-      uso: "Determinar qué bando actúa primero en el Turno Táctico."
-      vigor_en_riesgo: false
+  flows_forzados:
 
-  riesgo_directo_vigor:
-    definicion: "Situaciones donde una tirada implica pérdida inmediata de VIGOR/HP al fallar o ser impactado."
-    aplica_cuando:
-      - "Tiradas de ataque (escaramuza o táctica) superan la CD/DEF enemiga."
-      - "Tiradas defensivas fallidas frente a entornos peligrosos (trampas, Peste, Tinta) con CD definida."
-      - "Efectos especiales de Bestiario que indiquen Daño directo (Fuego, Veneno, Gas, etc.)."
-    no_aplica_cuando:
-      - "Descripciones puramente narrativas sin tirada ni CD."
-      - "Tiradas sociales, de investigación o políticas sin riesgo físico explícito."
-    referencia:
-      - "HOJA.7.FICHA_MANDO (VIGOR/CORDURA)"
-      - "TOMO.BESTIARIO.FICHA_AMENAZA_UNIFICADA (CD, Vigor/Daño)"
-      - "RULE.JUEGO_NO_AUDIOLIBRO (si hay riesgo físico real, debe haber tirada y posible pérdida de VIGOR)."
+    # 1) POST-PACTO: TOUR DE CÁMARAS OBLIGATORIO
+    - id: "FLOW.POST_PACTO_TOUR_OBLIGATORIO"
+      when_any:
+        - "STATE.PACTO_BASTION_ACTIVO == true"
+        - "STATE.TOUR_BASTION_COMPLETADO != true"
+      enforce:
+        min_steps_required:
+          - "STEP.ENTRADA_CENTRAL"
+          - "STEP.MAPA_VERBAL"
+          - "STEP.MINI_TOUR_CASA"
+      source_of_truth:
+        - "bastion_tour:TOUR.BASTION_INICIO"
+      on_interrupt_player_action:
+        # El jugador puede pedir cosas, pero el orden no cambia.
+        behavior:
+          - "Responder 1 frase al request del jugador (ack)."
+          - "Continuar inmediatamente con el step actual del tour."
+      on_complete:
+        - "STATE.TOUR_BASTION_COMPLETADO = true"
 
-modes:
-  C:
-    id: "MODO.C_SIMULADOR"
-    role: "Simulador / jugador de pruebas"
-    description: >
-      Modo de pruebas. La IA ejecuta batallas, compara ejércitos o juega campañas de ensayo.
-      También puede adoptar el rol de PJ cuando un humano/otra IA hace de Arquitecto.
-    usage:
-      - "Testeo de balance entre ejércitos (submodo C-TACTICO)."
-      - "Pruebas de misiones/campañas antes de jugarlas (submodo C-TEST)."
-      - "Modo 'IA como jugador' en campañas experimentales (submodo C-PJ)."
+########################################
+# ANTI-RUIDO – DISPARADOR DE AGRESIÓN (MODO C)
+########################################
 
-    submodes:
-      tactico:
-        id: "MODO.C_TACTICO_WARGAME"
-        description: "Resolución de batallas tácticas y escaramuzas."
-        inputs:
-          - "Hojas de Ejército implicados."
-          - "Ficha de Mando del/los Comandantes (Hoja 7)."
-          - "Objetivo táctico y condiciones de victoria."
-        runtime_rules:
-          - "Usar siempre tiradas 1d20 + stats de unidad/comandante."
-          - "Aplicar HP/MOV/DEF/RNG según Tomo de Escuelas."
-          - "Actualizar HP/VIGOR de unidades según impactos."
-      test_campana:
-        id: "MODO.C_TEST_CAMPANA"
-        description: "Banco de pruebas de misiones y campañas."
-        inputs:
-          - "Descripción de misión/arco de campaña."
-          - "Recursos iniciales supuestos (R, BL, PC, VP, Fama/Infamia)."
-          - "Marcas y Relojes activos a testear."
-        runtime_rules:
-          - "Simular decisiones del PJ según perfil dado."
-          - "Usar Misiones 5PM y Relojes 8 pasos en resolución."
-          - "Permitir MOTOR LITE (tiradas resumen) cuando el usuario pida rapidez."
-          - "No volcar cambios a la campaña real salvo orden explícita."
-      ia_jugador:
-        id: "MODO.C_PJ"
-        description: "IA toma decisiones como si fuera un jugador humano."
-        inputs:
-          - "Ficha de Mando completa (Hoja 7)."
-          - "Objetivos personales / estilo de juego."
-          - "Límites de riesgo aceptable."
-        runtime_rules:
-          - "Elegir misiones, acciones y prioridades según el perfil."
-          - "Dejar al Arquitecto externo aplicar las reglas de sistema."
-          - "Devolver registro de decisiones y razonamiento."
+combat_triggering:
+  version: "1.0"
+  aggression_keywords:
+    - "ataco"
+    - "disparo"
+    - "cargar"
+    - "me lanzo"
+    - "le clavo"
+    - "embosco"
+    - "degüello"
+    - "duelo"
+  aggression_events:
+    - "enemigo_declara_ataque"
+    - "se_inicia_duelo"
+    - "emboscada_confirmada"
+    - "iniciativa_requerida"
 
-    global_rules:
-      - "PROTO_CONSERVACION_RECURSOS se aplica: no crear recursos de la nada."
-      - "Respetar whitelist/blacklist de razas y grandes personajes."
-      - "Resultados de MODO C no son canon por defecto; requieren confirmación para volcarse a campaña real."
-      - "Puede usar MOTOR LITE para testeo rápido sin cambiar las reglas de fondo del Códice."
+  # Selector de escala: Escaramuza (PJ y pocos) vs Táctica (pelotones)
+  scale_rules:
+    skirmish_if:
+      - "total_unidades_por_bando <= 2"   # héroes/parejas/pequeño choque
+      - "o 'duelo' explícito"
+    tactical_if:
+      - "cualquier_bando_usa_fichas == true"
+      - "o total_unidades_por_bando >= 3"
+
+  on_aggression_detected:
+    - "STATE.COMBAT_ACTIVE = true"
+    - "Resolver escala via scale_rules"
+    - "Si skirmish: STATE.COMBAT_MODE = 'ESCARAMUZA'"
+    - "Si tactical: STATE.COMBAT_MODE = 'TACTICA'"
+    - "Cambiar a MODO C (SIMULADOR) para resolución"
+
+########################################
+# MODO C – REGLAS (TABLERO + DADOS + DAÑO)
+########################################
+
+modo_c:
+  board:
+    shape: "HEX"
+    width: 60
+    height: 60
+    coordinate_system: "axial_qr"
+    notes:
+      - "EXTENSIÓN OPERATIVA: tablero estándar 60x60 hex (no contradice MOV/RNG por casillas)."
+
+  # Stats canónicos: HP / MOV / DEF(dado) / RNG(casillas) en Escuelas/Unidades
+  # (RNG nunca es random; siempre casillas)
+  stats_model:
+    hero:
+      hp: "HP"
+      mov: "MOV"
+      def_die: "DEF"
+      rng: "RNG"
+    unit_ficha50:
+      representation: "1 ficha = 50 soldados"
+      default_hp_per_ficha: 50
+      notes:
+        - "Soportado por invocaciones/revivir con 50 HP (base de ficha) y tablas de 'Unidad (Ficha 50)'."
+
+  resolution_core:
+    initiative:
+      method: "1d10_por_bando + bonos"
+      ties: "re-roll"
+      notes:
+        - "Extensión ligera: el Códice define bonificadores a iniciativa en habilidades, pero no un único dado universal."
+    action_economy:
+      per_turn:
+        - "1 Movimiento (hasta MOV)"
+        - "1 Acción (Atacar / Habilidad / Preparar / Retirarse)"
+      command_cycle:
+        standard:
+          allows: "1 Habilidad"
+          cooldown_after_use: 3
+        concentrated:
+          requirement: "esperar 5 turnos"
+          allows: "2 Habilidades simultáneas"
+          reset_cycle: true
+
+    attack_defense_roll:
+      # Mecánica base por dados de ATK/DEF que ya aparecen en tablas.
+      to_hit:
+        - "Atacante: tira su dado de ATK"
+        - "Defensor: tira su dado de DEF (aplica cobertura/terreno como modificadores)"
+        - "Impacta si ATK >= DEF"
+      damage_default:
+        # EXTENSIÓN OPERATIVA (necesaria porque el Códice lista valores de daño en habilidades,
+        # pero no un daño universal para ataques básicos).
+        skirmish:
+          conversion:
+            - "daño_bruto = max(1, ATK - DEF)"
+            - "daño_vigor = ceil(daño_bruto / 5)"
+        tactical:
+          conversion:
+            - "daño_bruto = max(1, ATK - DEF)"
+            - "daño_hp = daño_bruto"
+          ficha_casualties:
+            - "cada 50 HP perdidos => 1 ficha destruida (bajas 50)"
+            - "daño excedente puede saltar a la siguiente ficha (opcional: true)"
+
+  damage_channels:
+    # Regla solicitada por ti
+    extension_psique:
+      description: "EXTENSIÓN OPERATIVA: El daño psicológico va a Cordura salvo oficio nivel 3+."
+      skirmish:
+        psychological_damage:
+          default_target: "CORDURA"
+          if_oficio_level_gte_3:
+            redirect_to: "VIGOR"
+      tactical:
+        psychological_damage:
+          default_target: "MORAL"
+          if_hero_oficio_level_lt_3:
+            splash_to_hero: "CORDURA (1 por cada 10 de psique)"
+          if_hero_oficio_level_gte_3:
+            splash_to_hero: "VIGOR (en vez de Cordura)"
+
+  terrain_and_modifiers:
+    # Anclado en la tabla de Geografía y Estrategia (cobertura, elevado, terreno difícil, etc.)
+    elevation:
+      atk_bonus: +2
+      rng_bonus: +5
+    cover_light:
+      def_bonus_vs_projectiles: +2
+    cover_heavy:
+      def_bonus_all: +4
+      immune_to_charge_damage: true
+    difficult_terrain:
+      move_cost_per_hex: 2
+    bottleneck:
+      rule: "solo 1 ficha (50 soldados) puede atacar o ser atacada"
+      cancels_mass_bonuses: true
+    flanking:
+      atk_bonus: +4
+      notes:
+        - "crítico mejorado si el sistema de críticos del módulo está activo"
+
+  special_rules:
+    colossus:
+      hp_bonus: +100
+      representation:
+        - "peana 2x2 o 3x3"
+        - "o apilar 4 fichas juntas"
+      immunities:
+        - "inmune a Derribo/Empuje/Miedo salvo fuente Coloso"
+    chaos_die:
+      die: "d4"
+      triggers:
+        - "estructura_cae"
+        - "maquina_explota"
+        - "evento_magico_mayor"
+
+########################################
+# TRIGGERS (ENGINE)
+########################################
+
+engine_triggers:
+  - id: "TRIGGER.POST_PACTO_FORZAR_TOUR"
+    description: "Tras activar el Pacto, se ejecuta el tour mínimo del Bastión antes de la 1ª misión."
+    when: "STATE.PACTO_BASTION_ACTIVO == true AND STATE.TOUR_BASTION_COMPLETADO != true"
+    actions:
+      - "EJECUTAR_FLOW: FLOW.POST_PACTO_TOUR_OBLIGATORIO"
+
+  - id: "TRIGGER.AGRESION_ENTRAR_MODO_C"
+    description: "Si hay agresión declarada o emboscada confirmada, entrar en MODO C y elegir escala."
+    when: "event in combat_triggering.aggression_events OR text_contains_any(combat_triggering.aggression_keywords)"
+    actions:
+      - "combat_triggering.on_aggression_detected"

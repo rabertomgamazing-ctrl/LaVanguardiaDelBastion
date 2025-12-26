@@ -9414,3 +9414,115 @@ Pasado el límite:
 - Misiones secundarias pequeñas y de baja escala.  
 
 ---
+# NUEVOS MÓDULOS Y SISTEMAS EXTENDIDOS – EL ÚLTIMO BASTIÓN
+
+Este documento recopila los elementos recientemente añadidos al sistema que no están reflejados en el Protocolo A tradicional, con el objetivo de integrarlos correctamente a la narrativa, gestión y simulación del mundo de juego.
+
+---
+
+## 1. SISTEMA DE TRANSBORDADORES RÚNICOS
+
+**Definición**: Red de portales enanos anclados a nodos de piedra y energía mágica.
+
+### Conceptos Clave
+
+* **Nodo**: punto de destino o conexión.
+* **Estado del nodo**: Activo / Desactivado / Restringido.
+* **PC (Planificación Central)**: recurso para activarlos o mantenerlos.
+* **Favor Enano**: marcador de confianza usado para abrir nodos nuevos.
+
+### Reglas Principales
+
+* Se debe estar físicamente en un nodo activo para poder usarlo.
+* Los saltos consumen PC.
+* Algunos nodos requieren niveles específicos de Favor Enano para acceder.
+
+---
+
+## 2. REGLA DE LOS 24 PÁRRAFOS (TIEMPO NARRATIVO)
+
+**Objetivo**: Traducir texto narrativo de la IA en tiempo de juego.
+
+### Contabilidad
+
+* 1 párrafo narrativo = 1 hora de juego.
+* Al llegar a 24 párrafos → se activa un **Turno de Amenaza**:
+
+  * Avance de Relojes.
+  * Activación de Marcas.
+  * Progresión del mundo.
+
+### Modo Escriba
+
+* Lleva registro del tiempo y días transcurridos.
+* Pregunta al jugador al final de cada sección: “¿Qué hora y día marca el mundo ahora?”
+
+---
+
+## 3. NUEVAS ZONAS Y MODOS DE VIAJE
+
+### Coronas de Distancia
+
+Zonas organizadas por **número de casillas** desde el Bastión:
+
+* **Corona A (1–3 casillas)**: acceso inmediato.
+* **Corona B (4–7 casillas)**: medio alcance.
+* **Corona C (8–12 casillas)**: profundidad o borde del continente.
+* **Corona D (12+)**: zonas extremas o aisladas.
+
+### Ejemplos
+
+* *Suroeste (IDs 15–23)*: “Tierra de Nadie” → 3–8 casillas.
+* *Sur/Costas (IDs 24–32)*: hasta 11 casillas combinando tierra + mar.
+
+### Reglas de Viaje
+
+* Determinar ruta intermedia.
+* Calcular días de viaje según casillas.
+* El uso de transbordadores puede reducir el trayecto si hay nodos activos.
+
+---
+
+## 4. SISTEMA DE LEALTAD DEL BASTIÓN
+
+**Estados posibles**:
+
+1. **Lealtad a la Corte**
+2. **División Interna / Neutralidad**
+3. **Lealtad al Jugador**
+
+### Factores de Cambio
+
+* Fama, Infamia, Misiones internas, Influencia política.
+* El sistema es narrativo, no numérico.
+
+---
+
+## 5. FAVORES DE LA CORTE Y DECRETOS
+
+**Recurso vinculado**: BL (Bienes de Lujo).
+
+### Reglas
+
+* Los favores tienen costes crecientes si se repiten.
+* El abuso de favores incrementa Infamia.
+* Ejemplos: Amnistías, Desvíos estratégicos, Activación de nodos o bases.
+
+---
+
+## 6. INTEGRACIÓN NARRATIVA Y FLUJO DINÁMICO
+
+La IA debe considerar estos sistemas como **extensiones oficiales** del canon.
+
+Siempre que surjan:
+
+* Saltos rúnicos,
+* Cómputo de tiempo interno,
+* Rutas de viaje extendidas,
+* Favores políticos o eventos narrativos basados en territorio,
+
+…deben integrarse de forma fluida con las Hojas originales, como si fueran parte del Protocolo A ampliado.
+
+---
+
+**Nota para el Director/IA**: Todas estas mecánicas se consideran ahora partes **oficiales** del sistema y deben activarse automáticamente cuando la situación lo requiera. No requieren aprobación especial del jugador.
